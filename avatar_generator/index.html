@@ -19,6 +19,8 @@
       <button id="btnStart" title="回到开头">⏮</button>
       <button id="btnPlay" title="播放/暂停（空格）">▶</button>
       <label class="rec"><input type="checkbox" id="chkRec"> ● 录制按键（Enter）</label>
+      <label title="拖骨骼、拖缩放框、改数值时直接在当前时间记关键帧；不勾就是试看"><input type="checkbox" id="chkAutoKey"> ◆ 自动记关键帧</label>
+      <label title="新记的骨骼 / 缩放框关键帧用哪种插值">插值 <select id="selEase"></select></label>
       <span id="timeText">0.00 / 20.00 s</span>
       <label>无音频时长 <input type="number" id="inDur" value="20" min="1" step="1" style="width:56px"> s</label>
       <label>时间轴可见 <input type="range" id="inSpan" min="3" max="120" value="20"></label>
@@ -32,6 +34,7 @@
       <button data-tab="lip">口型</button>
       <button data-tab="pose">调节 / 动画</button>
       <button data-tab="out">输出 / 色彩</button>
+      <button data-tab="bones">骨骼</button>
       <button data-tab="keys">关键帧</button>
       <button data-tab="layers">图层</button>
     </nav>
@@ -77,16 +80,38 @@
       <div class="btns" id="g_mouth"></div>
       <h3>眼睛 / 耳朵 / 胡子</h3>
       <div class="sub">眼睛</div><div class="btns" id="g_eyes"></div>
-      <div class="sub">耳朵</div><div class="btns" id="g_ears"></div>
+      <div class="sub">两只耳朵</div><div class="btns" id="g_ears"></div>
+      <div class="sub">左耳（画面左）</div><div class="btns" id="g_earL"></div>
+      <div class="sub">右耳（画面右）</div><div class="btns" id="g_earR"></div>
       <div class="sub">胡子</div><div class="btns" id="g_whiskers"></div>
-      <h3>手势 <small>期待手会自动换成身体镜像版</small></h3>
-      <div class="btns" id="g_hand"></div>
-      <h3>电脑 <small>托在展示手上，盖住手的后半边</small></h3>
+      <h3>手势 <small>左右手各选一个，同一边互斥；双手手势两边都占。再点一次放下</small></h3>
+      <div class="sub">画面左手 <small class="dim">举手和衣服在同一张图上，也算左手</small></div><div class="btns handbtns" id="g_handL"></div>
+      <div class="sub">画面右手 <small class="dim">期待手、摸下巴会自动换成身体镜像版</small></div><div class="btns handbtns" id="g_handR"></div>
+      <div class="sub">双手</div><div class="btns handbtns" id="g_handLR"></div>
+      <div class="row"><button id="btnHandsOff">全部放下</button><button id="btnWasted" title="头顶的 WASTED 字，打开时会砸下来">WASTED 字</button></div>
+      <h3>手势专属动画 <small>只列出现在举着的手势的</small></h3>
+      <div class="btns" id="g_gact"></div>
+      <h3>缩放框 <small>节目效果：把手势超级拉长 / 压扁。默认全部关闭</small></h3>
+      <div id="boxFields">
+        <div class="row">
+          <label>手势 <select id="selBoxHand"></select></label>
+          <label title="在预览上显示手柄，拖手柄自由缩放；按住 Shift 等比"><input type="checkbox" id="chkBoxEdit"> 在画面上拖</label>
+        </div>
+        <div class="grid">
+          <label>横向 <input type="range" data-k="sx" min="-3" max="3" step="0.01"> <input type="number" data-k="sx" step="0.05"></label>
+          <label>竖向 <input type="range" data-k="sy" min="-3" max="3" step="0.01"> <input type="number" data-k="sy" step="0.05"></label>
+          <label>锚点 <select data-k="anchor"><option value="wrist">手腕</option><option value="center">中心</option></select></label>
+          <label title="开了以后这个框会画在画面里，跟着动画一起导出"><input type="checkbox" data-k="box"> 显示框（会导出）</label>
+        </div>
+      </div>
+      <div class="row"><button id="btnBoxKey">◇ 记关键帧</button><button id="btnBoxDelKey">删除当前时间的关键帧</button><button id="btnBoxReset">缩放归 1</button></div>
+      <div id="boxKeyList" class="keylist"></div>
+      <h3>电脑 <small>托在展示手上，跟着展示手动</small></h3>
       <div class="btns" id="g_laptop"></div>
       <div class="row">
-        <label>缩放 <input type="number" id="s_lapScale" value="0.65" step="0.02" min="0.1"></label>
-        <label>X <input type="number" id="s_lapX" value="-228" step="5"></label>
-        <label>Y <input type="number" id="s_lapY" value="100" step="5"></label>
+        <label>缩放 <input type="number" id="s_lapScale" value="0.815" step="0.02" min="0.1"></label>
+        <label>X <input type="number" id="s_lapX" value="19" step="5"></label>
+        <label>Y <input type="number" id="s_lapY" value="62" step="5"></label>
       </div>
       <h3>动作</h3>
       <div class="btns" id="g_act"></div>
@@ -142,12 +167,44 @@
       <div class="row"><button id="btnExport" class="primary">导出 PNG 序列</button><button id="btnCancel" hidden>取消</button><span id="exProg"></span></div>
     </div>
 
+    <!-- 骨骼 -->
+    <div class="tab" id="tab-bones">
+      <h3>骨骼 <small>身体 → 头 → 左耳 / 右耳；红线只在预览里显示，不会导出</small></h3>
+      <div class="btns" id="g_bones"></div>
+      <div class="grid" id="boneFields"></div>
+      <div class="row"><button id="btnBoneKey">◇ 记关键帧</button><button id="btnBoneDelKey">删除当前时间的关键帧</button><button id="btnBoneReset">归零</button></div>
+      <div class="dim">数值是叠在程序动作（呼吸、点头、跳……）上面的：角度、位移相加，缩放相乘。不勾「自动记关键帧」时，改的数值只是试看。</div>
+      <h3>在画面上拖</h3>
+      <div class="row">
+        <label>IK 链长 <select id="selIKLen"><option value="1">1（只转这根）</option><option value="2" selected>2（连父骨骼）</option><option value="3">3（到身体）</option></select></label>
+        <label><input type="checkbox" id="chkBonesAlways"> 其他选项卡也显示骨骼</label>
+      </div>
+      <div class="dim">拖红线末端的白圈：转动骨骼，链长 2 时拖耳朵尖会连头一起转。按住 Shift 拖关节：平移这根骨骼。</div>
+      <h3>这根骨骼的关键帧 <small>插值写在「到这一帧」的那段上</small></h3>
+      <div id="boneKeyList" class="keylist"></div>
+    </div>
+
     <!-- 关键帧 -->
     <div class="tab" id="tab-keys">
       <div class="row">
         <button id="btnUndo">撤销上一个</button><button id="btnClearEv">清空</button>
-        <button id="btnSaveProj">保存工程</button><label class="file">载入工程 <input type="file" id="fileProj" accept=".json"></label>
+        <button id="btnSaveProj">保存工程</button><label class="file">载入工程 / 蓝图 <input type="file" id="fileProj" accept=".json"></label>
       </div>
+      <details id="bpBox" open>
+        <summary>片段蓝图 <small>把一段关键帧记下来，整段部署，或者复制给 agent 参考修改</small></summary>
+        <div class="dim">在时间轴上按住 Shift 拖出一段，或者直接填起止时间。</div>
+        <div class="row">
+          <label>起 <input type="number" id="selT0" step="0.05"></label><label>止 <input type="number" id="selT1" step="0.05"></label>
+          <button id="btnSelClear">清除选区</button>
+        </div>
+        <div class="row"><input type="text" id="bpName" placeholder="蓝图名称（可空）" style="flex:1"><button id="btnBpRecord" class="primary">记录选区</button></div>
+        <div class="row">
+          <label class="file">导入蓝图 <input type="file" id="fileBp" accept=".json" multiple></label>
+          <label><input type="checkbox" id="chkBpClear" checked> 部署前清空目标区间</label>
+          <label title="先把录制时片段开头的表情、手势等状态补上"><input type="checkbox" id="chkBpState" checked> 带上起始状态</label>
+        </div>
+        <div id="bpList"></div>
+      </details>
       <div id="evList"></div>
     </div>
 
@@ -161,9 +218,11 @@
 <audio id="audio"></audio>
 <script src="psd.js"></script>
 <script src="rig.js"></script>
+<script src="bones.js"></script>
 <script src="dsp.js"></script>
 <script src="lipsync.js"></script>
 <script src="grade.js"></script>
+<script src="motion.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

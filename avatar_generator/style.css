@@ -25,7 +25,7 @@ select { background: #1d2026; color: #e6e6e6; border: 1px solid #3b414b; border-
 #transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #transport .rec { color: #ff7b6e; }
 #timeText { font-variant-numeric: tabular-nums; min-width: 120px; }
-#timeline { width: 100%; height: 110px; background: #1d2026; border-radius: 6px; cursor: pointer; }
+#timeline { width: 100%; height: 124px; background: #1d2026; border-radius: 6px; cursor: pointer; }
 #status { min-height: 20px; opacity: .8; }
 #status.err { color: #ff7b6e; opacity: 1; }
 
@@ -65,3 +65,22 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 #curveCanvas { width: 272px; height: 272px; display: block; cursor: crosshair; border-radius: 6px; touch-action: none; }
 #curveTabs button { min-width: 44px; }
 .dim { opacity: .6; font-size: 12px; }
+#view.editing { cursor: crosshair; }
+.keylist { max-height: 220px; overflow-y: auto; font-size: 12px; }
+.keylist table { width: 100%; border-collapse: collapse; }
+.keylist td { padding: 1px 3px; border-bottom: 1px solid #23262c; white-space: nowrap; }
+.keylist input { width: 58px; }
+.grid input[type=number] { width: 58px; flex-shrink: 0; }
+#tab-keys details { flex-shrink: 0; border-bottom: 1px solid #2a2e35; padding-bottom: 6px; margin-bottom: 6px; }
+#tab-keys summary { cursor: pointer; font-weight: bold; color: #5fb39a; }
+#tab-keys summary small { font-weight: normal; color: #999; margin-left: 6px; }
+#bpList { max-height: 200px; overflow-y: auto; }
+#bpList .bp { border: 1px solid #2a2e35; border-radius: 6px; padding: 4px 8px; margin: 4px 0; }
+#bpList .bp .row { margin: 3px 0 0; gap: 5px; }
+input[type=text] { background: #1d2026; color: #e6e6e6; border: 1px solid #3b414b; border-radius: 4px; padding: 2px 6px; }
+#boneFields { grid-template-columns: 1fr; }
+#boneFields label { display: grid; grid-template-columns: 56px 1fr 64px; }
+#boxFields .grid label input[type=range] { min-width: 50px; }
+.tab { overflow-x: hidden; }
+#boxFields .grid { grid-template-columns: 1fr; }
+#boxFields .grid label:has(input[type=range]) { display: grid; grid-template-columns: 40px 1fr 64px; }

@@ -1,52 +1,24 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const ease = u => u * u * (3 - 2 * u);
-const easeOutCubic = u => 1 - Math.pow(1 - u, 3);
-const easeInCubic = u => u * u * u;
-const noise = (i, seed) => { const s = Math.sin(i * 12.9898 + seed * 78.233) * 43758.5453; return (s - Math.floor(s)) * 2 - 1; };
 
 function mulberry32(a) { return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function schedule(seed, min, max, horizon = 4000) { const r = mulberry32(seed), out = []; let t = min * r(); while (t < horizon) { out.push(t); t += min + (max - min) * r(); } return out; }
 function inWindow(starts, t, dur) { let lo = 0, hi = starts.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (starts[m] <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k >= 0 && t - starts[k] < dur; }
 const BLINK_T = schedule(7, 2.2, 5.0);
-const EAR_T = schedule(13, 4, 9);
-
-// ---------- 动作 ----------
-function hop(m, u, H) {
-  if (u < 0.18) { const q = Math.sin(u / 0.18 * Math.PI) * 0.09; m.sy *= 1 - q; m.sx *= 1 + q * 0.6; }
-  else if (u < 0.82) { const v = (u - 0.18) / 0.64, st = 0.05 * Math.sin(v * Math.PI); m.y -= H * 4 * v * (1 - v); m.sy *= 1 + st; m.sx *= 1 - st * 0.6; m.headY += 4 * Math.sin(v * Math.PI); }
-  else { const q = Math.sin((u - 0.82) / 0.18 * Math.PI) * 0.1; m.sy *= 1 - q; m.sx *= 1 + q * 0.6; }
-}
-const fadeEnv = (u, a) => u < a ? ease(u / a) : u > 1 - a ? ease((1 - u) / a) : 1;
-const ACTIONS = {
-  pop:     { label: '弹入', key: 'q', dur: 0.6,  fn: (m, u) => { const s = 1 - Math.pow(2, -9 * u) * Math.cos(u * Math.PI * 3.2); m.sx *= s; m.sy *= s; m.y += (1 - easeOutCubic(u)) * 140; m.rot += Math.sin(u * Math.PI * 3) * (1 - u) * 6; } },
-  out:     { label: '弹出', key: 'w', dur: 0.4,  fn: (m, u) => { const s = u < 0.25 ? 1 + 0.08 * Math.sin(u / 0.25 * Math.PI / 2) : 1.08 * Math.pow(1 - (u - 0.25) / 0.75, 2); m.sx *= s; m.sy *= s; if (u > 0.25) m.y += easeInCubic((u - 0.25) / 0.75) * 100; } },
-  hop:     { label: '跳', key: 'r', dur: 0.5, fn: (m, u) => hop(m, u, 70) },
-  hop2:    { label: '连跳', key: 't', dur: 0.9, fn: (m, u) => hop(m, (u * 2) % 1, 45) },
-  bounce:  { label: 'Q弹', key: 'j', dur: 0.55, fn: (m, u) => { const k = Math.sin(u * Math.PI * 3) * (1 - u); m.sy *= 1 + 0.12 * k; m.sx *= 1 - 0.08 * k; } },
-  nod:     { label: '点头', key: 'y', dur: 0.6, fn: (m, u) => { const k = Math.abs(Math.sin(u * Math.PI * 2)); m.headY += 9 * k * (1 - u * 0.3); m.headRot -= 2 * k; } },
-  shake:   { label: '摇头', key: 'h', dur: 0.7, fn: (m, u) => { m.headRot += 8 * Math.sin(u * Math.PI * 5) * (1 - u); } },
-  tilt:    { label: '歪头', key: 'g', dur: 1.4, fn: (m, u) => { const e = fadeEnv(u, 0.2); m.headRot += 10 * e; m.rot += 2 * e; } },
-  sway:    { label: '摇身', key: 's', dur: 1.35, fn: (m, u) => {
-    const swing = v => Math.sin(v * Math.PI * 3) * Math.exp(-2.1 * v) * fadeEnv(v, 0.14);
-    m.rot += 7 * swing(u);
-    // 身体绕脚底带动手和道具，头绕颈部稍晚回弹。
-    m.headRot += 1.8 * swing(Math.max(0, (u - 0.045) / 0.955));
-  } },
-  tremble: { label: '发抖', key: 'f', dur: 0.8, fn: (m, u, t) => { const a = 4 * (1 - u * u), i = Math.floor(t * 30); m.x += noise(i, 1) * a; m.y += noise(i, 2) * a * 0.6; } },
-  wave:    { label: '挥手', key: 'v', dur: 1.6, fn: (m, u) => { const e = fadeEnv(u, 0.15); m.wave = true; m.handY += (1 - e) * 160; m.handRot += 14 * Math.sin(u * Math.PI * 6) * e; } },
-};
+const EAR_T = { L: schedule(13, 4, 9), R: schedule(29, 5, 10) };
 
 // ---------- 全局状态 ----------
 const App = {
   layers: [], ready: false,
   events: [], history: [],
-  live: { over: [], acts: [] },
+  // 试看：按键 / 拖骨骼 / 拖缩放框的临时效果，不进导出
+  live: { over: [], acts: [], bone: {}, box: {} },
   visemes: null, audioBuf: null, audioName: '',
   duration: 20, t: 0, playing: false, recording: false,
   wallStart: 0, tStart: 0, pauseWall: performance.now(),
   view0: 0, exporting: false, cancel: false,
+  tab: 'pose', selBone: 'head', sel: null, frame: null, drag: null, bps: [],
 };
 const S = {};
 const SETTING_IDS = ['boilFps', 'jitter', 'idle', 'blink', 'earTwitch', 'talkBob', 'startHidden', 'outW', 'outH', 'scale', 'ax', 'ay', 'fps', 'lapScale', 'lapX', 'lapY'];
@@ -62,33 +34,48 @@ function writeSettings(o) {
 
 const audio = $('#audio'), refVideo = $('#refVideo');
 const status = (msg, err) => { const el = $('#status'); el.textContent = msg; el.className = err ? 'err' : ''; };
+const autoKeyOn = () => $('#chkAutoKey').checked || App.recording;
+const curEase = () => $('#selEase').value;
 
 // ---------- 状态计算 ----------
 function initialState() {
-  return { expr: 'normal', eyes: 'normal', ears: 'up', idleMouth: 'n', whiskers: 'normal', loop: null, hand: 'none', laptop: 'none', mouth: null, visible: !S.startHidden };
+  return { expr: 'normal', eyes: 'normal', earL: 'up', earR: 'up', idleMouth: 'n', whiskers: 'normal', loop: null,
+    hands: { L: null, R: null }, laptop: 'none', wasted: false, wastedT: -1, mouth: null, visible: !S.startHidden };
 }
-function applyEvent(s, k, v) {
-  if (k === 'expr') {
-    const x = EXPRESSIONS[v]; if (!x) return;
-    Object.assign(s, { expr: v, eyes: x.eyes, ears: x.ears, idleMouth: x.mouth, whiskers: x.whiskers || 'normal', loop: x.loop || null });
-  } else if (k === 'act') {
-    if (v === 'pop') s.visible = true;
-    if (v === 'out') s.visible = false;
+// 打开一个手势：它占用的每一边，原来在那边的手势整个放下（双手手势两边一起放下）
+function handOn(hands, id) {
+  const G = HANDS[id]; if (!G) return;
+  for (const side of G.side) { const cur = hands[side]; if (cur && cur !== id) for (const sd of HANDS[cur].side) if (hands[sd] === cur) hands[sd] = null; }
+  for (const side of G.side) hands[side] = id;
+}
+function handOff(hands, id) { for (const side of ['L', 'R']) if (id === 'all' || hands[side] === id) hands[side] = null; }
+function applyEvent(s, k, v, t) {
+  switch (k) {
+    case 'expr': {
+      const x = EXPRESSIONS[v]; if (!x) return;
+      Object.assign(s, { expr: v, eyes: x.eyes, earL: x.ears, earR: x.ears, idleMouth: x.mouth, whiskers: x.whiskers || 'normal', loop: x.loop || null });
+      break;
+    }
+    case 'ears': s.earL = s.earR = v; break;
+    case 'act': if (v === 'pop') s.visible = true; if (v === 'out') s.visible = false; break;
+    case 'gact': break;
+    // 兼容旧工程：「敲电脑」= 展示手 + 白屏；「FINAL 字」开关；旧的身体方向关键帧忽略
+    case 'hand': if (v === 'none') handOff(s.hands, 'all'); else if (v === 'laptop') { handOn(s.hands, 'show'); s.laptop = 'white'; } else handOn(s.hands, v); break;
+    case 'handOff': handOff(s.hands, v); break;
+    case 'final': s.laptop = v ? 'final' : 'none'; break;
+    case 'body': break;
+    case 'wasted': if (v && !s.wasted) s.wastedT = t; s.wasted = !!v; break;
+    default: s[k] = v;
   }
-  // 兼容旧工程：以前的「敲电脑」= 展示手 + 白屏电脑；「FINAL 字」开关；身体方向现在跟手势走，旧的 body 关键帧忽略
-  else if (k === 'hand' && v === 'laptop') { s.hand = 'show'; s.laptop = 'white'; }
-  else if (k === 'final') s.laptop = v ? 'final' : 'none';
-  else if (k === 'body') {}
-  else s[k] = v;
 }
 function stateAt(t, live) {
   const st = initialState(), acts = [];
   for (const e of App.events) {
     if (e.t > t + 1e-9) break;
-    applyEvent(st, e.k, e.v);
-    if (e.k === 'act') acts.push(e);
+    applyEvent(st, e.k, e.v, e.t);
+    if (e.k === 'act' || e.k === 'gact') acts.push(e);
   }
-  if (live) for (const [k, v] of App.live.over) applyEvent(st, k, v);
+  if (live) for (const [k, v] of App.live.over) applyEvent(st, k, v, -1e9);
   return { st, acts };
 }
 function visemeAt(t) {
@@ -96,80 +83,176 @@ function visemeAt(t) {
   const i = Math.floor(t * V.fps);
   return i >= 0 && i < V.labels.length ? { label: V.labels[i], energy: V.energy[i] || 0 } : { label: null, energy: 0 };
 }
+function actDef(k, v) {
+  if (k === 'act') return ACTIONS[v];
+  const an = String(v).split(':')[1]; return HAND_ANIMS[an];
+}
+const boneVals = (id, t, live) => (live && App.live.bone[id]) ? { ...BONE_DEF, ...App.live.bone[id] } : Tracks.eval('bone.' + id, t, BONE_DEF);
+const boxVals = (id, t, live) => (live && App.live.box[id]) ? { ...BOX_DEF, ...App.live.box[id] } : Tracks.eval('hand.' + id, t, BOX_DEF);
+
+// 这一帧的姿势：程序动作 → 手势动画 → 关键帧轨道
+function framePose(t, tIdle, live, now) {
+  const { st, acts } = stateAt(t, live);
+  const p = newPose(); p.show = st.visible;
+  if (S.idle) {
+    const b = Math.sin(2 * Math.PI * tIdle / 3.4);
+    p.body.sy *= 1 + 0.008 * b; p.head.y += 1.5 * Math.sin(2 * Math.PI * tIdle / 3.4 + 0.6); p.head.rot += 0.8 * Math.sin(2 * Math.PI * tIdle / 6.1);
+    p.earL.rot -= 1.2 * Math.sin(2 * Math.PI * tIdle / 4.3 + 1); p.earR.rot += 1.2 * Math.sin(2 * Math.PI * tIdle / 4.7 + 2);
+  }
+  if (st.loop === 'tremble') { const i = Math.floor(tIdle * 24); p.body.x += noise(i, 11) * 2.5; p.body.y += noise(i, 12) * 1.5; }
+
+  const run = [];
+  for (const a of acts) { const D = actDef(a.k, a.v); if (D && t >= a.t && t < a.t + D.dur) run.push({ k: a.k, v: a.v, u: (t - a.t) / D.dur }); }
+  if (live) for (const la of App.live.acts) { const D = actDef(la.k, la.v); if (!D) continue; const u = (now - la.start) / 1000 / D.dur; if (u >= 0 && u < 1) run.push({ k: la.k, v: la.v, u }); }
+  for (const a of run) if (a.k === 'act') { ACTIONS[a.v].fn(p, a.u, tIdle); if (a.v === 'pop' || a.v === 'out') p.show = true; }
+
+  const hands = { ...st.hands };
+  if (p.force) for (const [side, id] of Object.entries(p.force)) { const cur = hands[side]; if (cur && cur !== id) for (const sd of HANDS[cur].side) if (hands[sd] === cur) hands[sd] = null; hands[side] = id; }
+  const vis = [...new Set([hands.L, hands.R].filter(Boolean))];
+  for (const a of run) if (a.k === 'gact') { const [g, an] = a.v.split(':'); if (vis.includes(g) && HAND_ANIMS[an]) HAND_ANIMS[an].fn(handVals(p, g), p, a.u, tIdle); }
+
+  // 耳朵偶尔抖一下：换成歪耳的图，再甩一下
+  const ears = { L: st.earL, R: st.earR };
+  if (S.earTwitch) for (const side of ['L', 'R']) if (ears[side] === 'up' && inWindow(EAR_T[side], tIdle, 0.22)) { ears[side] = 'tilt'; p['ear' + side].rot += side === 'L' ? -4 : 4; }
+
+  const vis2 = live && Mic.on && (Mic.taking || !App.playing) ? Mic.cur : visemeAt(t);
+  const mouth = st.mouth || vis2.label || st.idleMouth;
+  if (S.talkBob && !st.mouth && vis2.label) { p.head.y -= vis2.energy * 3; p.head.rot += vis2.energy * 1.2 * Math.sin(tIdle * 7); }
+
+  for (const b of BONES) addBoneVals(p[b.id], boneVals(b.id, t, live));
+  return { st, p, hands, vis, ears, mouth };
+}
+
+// 手的矩阵：父骨骼（身体）× 手势动画（绕手腕）× 缩放框（绕锚点）。nb = 不含缩放框
+function boxAnchor(g, anchor) {
+  const G = HANDS[g];
+  if (anchor !== 'center') return G.pivot;
+  const [x, y, w, h] = handRect(g); return [x + w / 2, y + h / 2];
+}
+function handRect(g) {
+  const G = HANDS[g];
+  if (G.clip) { const xs = G.clip.map(p => p[0]), ys = G.clip.map(p => p[1]), L = App.layers[G.layer]; const x0 = Math.max(Math.min(...xs), L.x), y0 = Math.max(Math.min(...ys), L.y), x1 = Math.min(Math.max(...xs), L.x + L.w), y1 = Math.min(Math.max(...ys), L.y + L.h); return [x0, y0, x1 - x0, y1 - y0]; }
+  const L = App.layers[G.layer]; return [L.x, L.y, L.w, L.h];
+}
+function handMatrix(Wbody, g, h, box) {
+  const [px, py] = HANDS[g].pivot, [ax, ay] = boxAnchor(g, box.anchor);
+  const nb = Wbody.translate(px + h.dx, py + h.dy).rotate(h.rot).scale(h.sx, h.sy).translate(-px, -py);
+  return { nb, M: nb.translate(ax, ay).scale(box.sx, box.sy).translate(-ax, -ay), anchor: [ax, ay] };
+}
+const hashKey = s => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 997; return h; };
 
 // ---------- 绘制 ----------
 // t：关键帧时间；tIdle：呼吸/眨眼/抖动用的时间（暂停时也继续走，导出时等于 t）
 function drawAvatar(ctx, t, tIdle, live, now) {
-  const { st, acts } = stateAt(t, live);
-  const active = [];
-  for (const a of acts) { const D = ACTIONS[a.v]; if (D && t >= a.t && t < a.t + D.dur) active.push({ v: a.v, u: (t - a.t) / D.dur }); }
-  if (live) for (const la of App.live.acts) { const u = (now - la.start) / 1000 / ACTIONS[la.v].dur; if (u >= 0 && u < 1) active.push({ v: la.v, u }); }
-
-  const m = { x: 0, y: 0, rot: 0, sx: 1, sy: 1, headRot: 0, headX: 0, headY: 0, handRot: 0, handY: 0, wave: false, show: st.visible };
-  if (S.idle) {
-    const b = Math.sin(2 * Math.PI * tIdle / 3.4);
-    m.sy *= 1 + 0.008 * b; m.headY += 1.5 * Math.sin(2 * Math.PI * tIdle / 3.4 + 0.6); m.headRot += 0.8 * Math.sin(2 * Math.PI * tIdle / 6.1);
-  }
-  if (st.loop === 'tremble') { const i = Math.floor(tIdle * 24); m.x += noise(i, 11) * 2.5; m.y += noise(i, 12) * 1.5; }
-  for (const a of active) { ACTIONS[a.v].fn(m, a.u, tIdle); if (a.v === 'pop' || a.v === 'out') m.show = true; }
-  if (!m.show) return st;
-
-  // 开着麦克风时：录音中或暂停时跟麦克风走；播放已有配音时仍按配音的口型
-  const vis = live && Mic.on && (Mic.taking || !App.playing) ? Mic.cur : visemeAt(t);
-  m.mouth = st.mouth || vis.label || st.idleMouth;
-  if (S.talkBob && !st.mouth && vis.label) { m.headY -= vis.energy * 3; m.headRot += vis.energy * 1.2 * Math.sin(tIdle * 7); }
+  const F = framePose(t, tIdle, live, now);
+  const { st, p, vis } = F;
+  if (!p.show) { if (live) App.frame = null; return st; }
 
   const tick = Math.floor(tIdle * Math.max(S.boilFps, 1));
   const pick = arr => (arr.length > 1 && S.boilFps > 0 ? arr[tick % arr.length] : arr[0]);
-  const list = [];
-  // z：画的先后（默认就是图层序号）；img：换一张图画（电脑的绿幕版）
-  const add = (idx, g, z = idx, img = null) => { if (idx != null) list.push({ idx, g, z, img }); };
+  const [bx, by] = boneById.body.pivot;
+  const root = new DOMMatrix().translate(S.ax, S.ay).scale(S.scale).translate(-bx, -by);
+  const W = computeSkeleton(root, p);
+  const HM = {}, boxes = {};
+  for (const g of vis) { boxes[g] = boxVals(g, t, live); HM[g] = handMatrix(W.body, g, handVals(p, g), boxes[g]); }
 
-  const hand = m.wave ? 'finger' : st.hand;
-  add(RIG.mirrorHands.includes(hand) ? RIG.body.mirror : pick(RIG.body.normal), 'body');
+  // z：画的先后（默认就是图层序号）；mk：用哪个矩阵；jk：线稿微抖用哪组随机数；clip / inv：只画多边形里面 / 外面
+  const list = [];
+  const add = (idx, mk, o = {}) => { if (idx != null) list.push({ idx, mk, z: idx, ...o }); };
+  const bodyHand = vis.find(g => HANDS[g].isBody);
+  if (bodyHand) {
+    const G = HANDS[bodyHand];
+    add(G.layer, 'body', { clip: G.clip, inv: true });
+    add(G.layer, 'hand:' + bodyHand, { clip: G.clip, z: G.layer + 0.01, jk: 'body' });
+  } else add(vis.some(g => HANDS[g].body === 'mirror') ? RIG.body.mirror : pick(RIG.body.normal), 'body');
   add(pick(RIG.neck), 'head');
-  const ears = S.earTwitch && st.ears === 'up' && inWindow(EAR_T, tIdle, 0.22) ? 'tilt' : st.ears;
-  add(pick(RIG.ears[ears]), 'head');
+  for (const side of ['L', 'R']) add(pick(RIG.ears[side][F.ears[side]]), 'ear' + side);
   add(RIG.head, 'head');
   let eyes = st.eyes;
-  if (S.blink && RIG.eyes[eyes].blinks && inWindow(BLINK_T, tIdle, 0.12)) eyes = 'closed';
-  add(RIG.eyes[eyes].white, 'head'); add(RIG.lens, 'head'); add(RIG.eyes[eyes].eye, 'head');
+  if (S.blink && RIG.eyes[eyes]?.blinks && inWindow(BLINK_T, tIdle, 0.12)) eyes = 'closed';
+  const E = RIG.eyes[eyes] || RIG.eyes.normal;
+  add(E.white, 'head'); add(RIG.lens, 'head'); add(pick(E.eye), 'head');
   add(pick(RIG.face), 'head'); add(pick(RIG.glasses), 'head');
-  add(RIG.mouths[m.mouth], 'head');
+  add(RIG.mouths[F.mouth], 'head');
   if (RIG.whiskers[st.whiskers]) add(pick(RIG.whiskers[st.whiskers]), 'head');
-  if (m.wave) add(RIG.hands.finger[0], 'hand');
-  else if (st.hand !== 'none') for (const l of RIG.hands[st.hand]) add(l, 'body');
+  for (const g of vis) if (!HANDS[g].isBody) add(HANDS[g].layer, 'hand:' + g);
   if (st.laptop !== 'none') {
     const lp = RIG.laptop;
-    add(lp.layer, 'laptop', lp.z, st.laptop === 'green' ? App.laptopGreen : null);
-    if (st.laptop === 'final') add(lp.final, 'laptop', lp.z + 0.1);
+    add(lp.layer, 'laptop', { z: lp.z, img: st.laptop === 'green' ? App.laptopGreen : null });
+    if (st.laptop === 'final') add(lp.final, 'laptop', { z: lp.z + 0.1 });
   }
+  if (st.wasted) add(RIG.wasted, 'wasted', { z: 90 });
   list.sort((a, b) => a.z - b.z);
 
-  const [px, py] = RIG.pivots.root, [nx, ny] = RIG.pivots.neck, [wx, wy] = RIG.pivots.wrist;
-  const root = new DOMMatrix().translate(S.ax, S.ay).scale(S.scale).translate(m.x, m.y).rotate(m.rot).scale(m.sx, m.sy).translate(-px, -py);
-  const G = {
-    root, body: root,
-    head: root.translate(nx, ny).rotate(m.headRot).translate(m.headX, m.headY).translate(-nx, -ny),
-    hand: root.translate(0, m.handY).translate(wx, wy).rotate(m.handRot).translate(-wx, -wy),
-    laptop: root.translate(S.lapX, S.lapY).scale(S.lapScale),
-  };
-  const jit = {};
-  for (const [gi, g] of ['root', 'body', 'head', 'hand', 'laptop'].entries()) {
-    jit[g] = S.jitter > 0 && S.boilFps > 0 ? G[g].translate(noise(tick * 7 + gi, 3) * S.jitter, noise(tick * 7 + gi, 4) * S.jitter) : G[g];
+  const M = { root, body: W.body, head: W.head, earL: W.earL, earR: W.earR };
+  for (const g of vis) M['hand:' + g] = HM[g].M;
+  M.laptop = (HM[RIG.laptop.hand] ? HM[RIG.laptop.hand].nb : W.body).translate(S.lapX, S.lapY).scale(S.lapScale);
+  {   // WASTED 字：打开的一瞬间从 1.8 倍砸下来
+    const L = App.layers[RIG.wasted], u = st.wastedT >= 0 ? (t - st.wastedT) / 0.35 : 1;
+    const s = u < 1 ? 1.8 - 0.8 * easeOutCubic(Math.max(0, u)) : 1;
+    M.wasted = L ? root.translate(L.x + L.w / 2, L.y + L.h / 2).scale(s).translate(-L.x - L.w / 2, -L.y - L.h / 2) : root;
   }
+  const J = {};
+  const jit = (mk, jk) => {
+    const key = jk || mk;
+    if (!(key in J)) J[key] = S.jitter > 0 && S.boilFps > 0 ? [noise(tick * 7 + hashKey(key), 3) * S.jitter, noise(tick * 7 + hashKey(key), 4) * S.jitter] : [0, 0];
+    return M[mk].translate(J[key][0], J[key][1]);
+  };
+
   ctx.imageSmoothingQuality = 'high';
   for (const it of list) {
     const L = App.layers[it.idx];
-    if (!L || !L.canvas) continue;
-    ctx.setTransform(jit[it.g]);
+    if (!L || !L.canvas || !M[it.mk]) continue;
+    ctx.setTransform(jit(it.mk, it.jk));
     ctx.globalAlpha = L.opacity;
-    ctx.drawImage(it.img || L.canvas, L.x, L.y);
+    if (it.clip) {
+      ctx.save(); ctx.beginPath();
+      if (it.inv) ctx.rect(L.x - 4, L.y - 4, L.w + 8, L.h + 8);
+      it.clip.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+      ctx.clip(it.inv ? 'evenodd' : 'nonzero');
+      ctx.drawImage(L.canvas, L.x, L.y);
+      ctx.restore();
+    } else ctx.drawImage(it.img || L.canvas, L.x, L.y);
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
+  // 缩放框：关键帧里开了「显示框」就画出来，会跟着导出
+  for (const g of vis) if (boxes[g].box) drawTransformBox(ctx, HM[g].M, handRect(g));
+  if (live) App.frame = { W, root, p, HM, boxes, vis, st };
   return st;
 }
+
+// 仿 PS 自由变换框：细线 + 8 个方形手柄 + 中心十字
+function boxHandles(Mx, r) {
+  const [x, y, w, h] = r;
+  return [[x, y], [x + w / 2, y], [x + w, y], [x + w, y + h / 2], [x + w, y + h], [x + w / 2, y + h], [x, y + h], [x, y + h / 2]].map(([a, b]) => Mx.transformPoint(new DOMPoint(a, b)));
+}
+function drawTransformBox(ctx, Mx, r, ghost = false) {
+  const P = boxHandles(Mx, r), k = Math.max(1, S.outW / 1000), c = Mx.transformPoint(new DOMPoint(r[0] + r[2] / 2, r[1] + r[3] / 2));
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = ghost ? 0.75 : 1;
+  ctx.beginPath(); [0, 2, 4, 6].forEach((i, n) => (n ? ctx.lineTo(P[i].x, P[i].y) : ctx.moveTo(P[i].x, P[i].y))); ctx.closePath();
+  ctx.lineWidth = 1.5 * k; ctx.strokeStyle = ghost ? '#2f8cff' : '#111'; if (ghost) ctx.setLineDash([6 * k, 4 * k]); ctx.stroke(); ctx.setLineDash([]);
+  const s = 9 * k;
+  for (const q of P) { ctx.fillStyle = '#fff'; ctx.fillRect(q.x - s / 2, q.y - s / 2, s, s); ctx.lineWidth = 1.2 * k; ctx.strokeStyle = '#111'; ctx.strokeRect(q.x - s / 2, q.y - s / 2, s, s); }
+  ctx.lineWidth = 1.2 * k; ctx.strokeStyle = ghost ? '#2f8cff' : '#111'; ctx.beginPath(); ctx.moveTo(c.x - 6 * k, c.y); ctx.lineTo(c.x + 6 * k, c.y); ctx.moveTo(c.x, c.y - 6 * k); ctx.lineTo(c.x, c.y + 6 * k); ctx.stroke();
+  ctx.restore();
+}
+function drawBones(ctx) {
+  const F = App.frame; if (!F) return;
+  const k = Math.max(1, S.outW / 1000);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `${13 * k}px sans-serif`; ctx.lineCap = 'round';
+  for (const b of BONES) {
+    const a = bonePivotW(F.W, b.id), c = boneTipW(F.W, b.id), sel = b.id === App.selBone;
+    ctx.strokeStyle = sel ? '#ffd23f' : '#ff3030'; ctx.lineWidth = (sel ? 4 : 2.5) * k;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(a.x, a.y, 5 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 2 * k; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, 7 * k, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle; ctx.fillText(b.label, c.x + 10 * k, c.y - 6 * k);
+  }
+  ctx.restore();
+}
+const showBones = () => App.tab === 'bones' || $('#chkBonesAlways').checked;
 
 // ---------- 播放 ----------
 function clockTime() {
@@ -210,7 +293,7 @@ function frame(now) {
   if (Mic.on) micTick(now);
   if (App.ready && !App.exporting) {
     readSettings();
-    // 先画到缓冲层，再套着滤镜贴到预览上
+    // 先画到缓冲层，再套着滤镜贴到预览上；骨骼红线和编辑用的缩放框只画在预览上
     const buf = layerBuf(S.outW, S.outH), bctx = buf.getContext('2d');
     bctx.clearRect(0, 0, S.outW, S.outH);
     const tIdle = App.playing ? App.t : App.t + (now - App.pauseWall) / 1000;
@@ -220,12 +303,15 @@ function frame(now) {
     ctx.filter = App.compare ? 'none' : Grade.css();
     ctx.drawImage(buf, 0, 0);
     ctx.filter = 'none';
+    const F = App.frame, bh = $('#selBoxHand').value;
+    if (F && $('#chkBoxEdit').checked && F.vis.includes(bh) && !F.boxes[bh].box) drawTransformBox(ctx, F.HM[bh].M, handRect(bh), true);
+    if (showBones()) drawBones(ctx);
     if (now - (App.histT || 0) > 400) { App.histT = now; CurveEditor.updateHist(buf); }
   }
   drawTimeline();
   $('#timeText').textContent = `${App.t.toFixed(2)} / ${App.duration.toFixed(2)} s`;
-  if (now - lastUI > 120) { lastUI = now; updateButtons(); }
-  App.live.acts = App.live.acts.filter(a => now - a.start < ACTIONS[a.v].dur * 1000);
+  if (now - lastUI > 120) { lastUI = now; updateButtons(); refreshEditors(); }
+  App.live.acts = App.live.acts.filter(a => { const D = actDef(a.k, a.v); return D && now - a.start < D.dur * 1000; });
   requestAnimationFrame(frame);
 }
 
@@ -234,32 +320,38 @@ const GROUPS = [
   { id: 'g_expr', k: 'expr', items: Object.entries(EXPRESSIONS).map(([v, x]) => ({ v, label: x.label, key: x.key })) },
   { id: 'g_mouth', k: 'mouth', items: [{ v: null, label: '自动', key: '`' }, ...MOUTHS], hold: true },
   { id: 'g_eyes', k: 'eyes', items: EYES },
-  { id: 'g_ears', k: 'ears', items: EARS },
+  { id: 'g_ears', k: 'ears', items: EAR_POSES },
+  { id: 'g_earL', k: 'earL', items: EAR_POSES },
+  { id: 'g_earR', k: 'earR', items: EAR_POSES },
   { id: 'g_whiskers', k: 'whiskers', items: WHISKERS },
-  { id: 'g_hand', k: 'hand', items: HANDS },
   { id: 'g_laptop', k: 'laptop', items: LAPTOP },
   { id: 'g_act', k: 'act', items: Object.entries(ACTIONS).map(([v, a]) => ({ v, label: a.label, key: a.key })) },
 ];
 const KEYMAP = {};
 
+function markLive() {
+  $('#liveBadge').hidden = !(App.live.over.length || Object.keys(App.live.bone).length || Object.keys(App.live.box).length);
+}
+function insertEvent(e) {
+  let i = App.events.length; while (i > 0 && App.events[i - 1].t > e.t) i--;
+  App.events.splice(i, 0, e);
+}
 function trigger(k, v) {
   if (!App.ready) return;
-  const cur = stateAt(App.t, true).st;
   if (App.recording) {
     const e = { t: +App.t.toFixed(3), k, v };
-    let i = App.events.length; while (i > 0 && App.events[i - 1].t > e.t) i--;
-    App.events.splice(i, 0, e); App.history.push(e);
+    insertEvent(e); App.history.push(e);
     renderEventList();
   } else {
-    if (k === 'act') App.live.acts.push({ v, start: performance.now() });
-    if (k !== 'act' || v === 'pop' || v === 'out') App.live.over.push([k, v]);
+    if (k === 'act' || k === 'gact') App.live.acts.push({ k, v, start: performance.now() });
+    if (k !== 'gact' && (k !== 'act' || v === 'pop' || v === 'out')) App.live.over.push([k, v]);
     if (App.live.over.length > 200) App.live.over.splice(0, 100);
-    $('#liveBadge').hidden = !App.live.over.length;
+    markLive();
   }
-  if (k === 'act') flash(v);
+  if (k === 'act' || k === 'gact') flash(k, v);
 }
-function flash(v) {
-  const b = document.querySelector(`#g_act button[data-v="${v}"]`);
+function flash(k, v) {
+  const b = document.querySelector(`#${k === 'act' ? 'g_act' : 'g_gact'} button[data-v="${v}"]`);
   if (b) { b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 250); }
 }
 
@@ -280,18 +372,45 @@ function buildButtons() {
       if (it.key) KEYMAP[it.key] = { k: g.k, v: it.v, hold: g.hold && it.v !== null };
     }
   }
+  // 手势：按左 / 右 / 双手分组，点一下打开，再点一下放下
+  for (const grp of HAND_GROUPS) {
+    const box = $('#g_hand' + grp.side);
+    for (const [id, G] of Object.entries(HANDS)) {
+      if (G.side.join('') !== grp.side) continue;
+      const b = document.createElement('button'); b.dataset.v = id; b.textContent = G.label;
+      b.title = `图层 ${G.layer}${G.body === 'mirror' ? '，配身体镜像版' : ''}${G.isBody ? '，和衣服在同一图层' : ''}`;
+      b.onclick = () => { const st = stateAt(App.t, true).st; trigger(st.hands.L === id || st.hands.R === id ? 'handOff' : 'hand', id); };
+      box.appendChild(b);
+    }
+  }
+  $('#btnHandsOff').onclick = () => trigger('handOff', 'all');
+  $('#btnWasted').onclick = () => trigger('wasted', !stateAt(App.t, true).st.wasted);
+  const sel = $('#selBoxHand');
+  for (const [id, G] of Object.entries(HANDS)) sel.appendChild(new Option(`${G.label}（${G.side.map(s => (s === 'L' ? '左' : '右')).join('')}）`, id));
 }
+let gactSig = '';
 function updateButtons() {
   if (!App.ready) return;
   const st = stateAt(App.t, true).st;
-  const cur = { expr: st.expr, mouth: st.mouth === null ? '' : st.mouth, eyes: st.eyes, ears: st.ears, whiskers: st.whiskers, hand: st.hand, laptop: st.laptop };
+  const cur = { expr: st.expr, mouth: st.mouth === null ? '' : st.mouth, eyes: st.eyes, earL: st.earL, earR: st.earR, ears: st.earL === st.earR ? st.earL : '', whiskers: st.whiskers, laptop: st.laptop };
   for (const g of GROUPS) {
-    for (const b of document.querySelectorAll(`#${g.id} button`)) {
-      let on;
-      if (g.k === 'act') continue;
-      else on = cur[g.k] === b.dataset.v;
-      b.classList.toggle('on', !!on);
+    if (g.k === 'act') continue;
+    for (const b of document.querySelectorAll(`#${g.id} button`)) b.classList.toggle('on', cur[g.k] === b.dataset.v);
+  }
+  const on = [st.hands.L, st.hands.R];
+  for (const b of document.querySelectorAll('.handbtns button')) b.classList.toggle('on', on.includes(b.dataset.v));
+  $('#btnWasted').classList.toggle('on', st.wasted);
+  // 手势专属动画：只列出现在举着的手势的
+  const vis = [...new Set(on.filter(Boolean))], sig = vis.join(',');
+  if (sig !== gactSig) {
+    gactSig = sig;
+    const box = $('#g_gact'); box.replaceChildren();
+    for (const g of vis) for (const an of HANDS[g].anims || []) {
+      const b = document.createElement('button'); b.dataset.v = `${g}:${an}`; b.textContent = `${HANDS[g].label}·${HAND_ANIMS[an].label}`;
+      b.onclick = () => trigger('gact', `${g}:${an}`); box.appendChild(b);
     }
+    if (!box.children.length) box.innerHTML = '<span class="dim">先举起一个手势，这里会出现它的专属动画</span>';
+    if (vis.length && !vis.includes($('#selBoxHand').value)) $('#selBoxHand').value = vis[0];
   }
 }
 
@@ -314,37 +433,197 @@ document.addEventListener('keyup', e => {
   if (held.has(key)) { held.delete(key); trigger('mouth', null); }
 });
 
+// ---------- 骨骼 / 缩放框的编辑 ----------
+function setBone(id, v) {
+  if (autoKeyOn()) { Tracks.setKey('bone.' + id, App.t, v, curEase()); delete App.live.bone[id]; onTracksChanged(); }
+  else { App.live.bone[id] = { ...v }; markLive(); }
+}
+function setBox(id, v) {
+  if (autoKeyOn()) { Tracks.setKey('hand.' + id, App.t, v, curEase()); delete App.live.box[id]; onTracksChanged(); }
+  else { App.live.box[id] = { ...v }; markLive(); }
+}
+function keyNow(name, v) { Tracks.setKey(name, App.t, v, curEase()); onTracksChanged(); }
+
+function buildBoneUI() {
+  const box = $('#g_bones');
+  for (const b of BONES) { const btn = document.createElement('button'); btn.dataset.v = b.id; btn.textContent = b.label; btn.onclick = () => { App.selBone = b.id; renderBoneKeys(); refreshEditors(true); }; box.appendChild(btn); }
+  const grid = $('#boneFields');
+  for (const P of BONE_PARAMS) {
+    const lab = document.createElement('label');
+    lab.innerHTML = `${P.label} <input type="range" data-k="${P.k}" min="${P.min}" max="${P.max}" step="${P.step}"> <input type="number" data-k="${P.k}" step="${P.step}">`;
+    grid.appendChild(lab);
+  }
+  grid.addEventListener('input', e => {
+    const k = e.target.dataset.k; if (!k) return;
+    const v = boneVals(App.selBone, App.t, true); v[k] = +e.target.value; setBone(App.selBone, v); refreshEditors(true, e.target);
+  });
+  $('#btnBoneKey').onclick = () => { const id = App.selBone; keyNow('bone.' + id, boneVals(id, App.t, true)); delete App.live.bone[id]; markLive(); };
+  $('#btnBoneDelKey').onclick = () => { if (Tracks.removeKeyAt('bone.' + App.selBone, App.t)) onTracksChanged(); else status('当前时间没有这根骨骼的关键帧', true); };
+  $('#btnBoneReset').onclick = () => setBone(App.selBone, { ...BONE_DEF });
+  for (const [k, e] of Object.entries(EASES)) $('#selEase').appendChild(new Option(e.label, k));
+}
+function buildBoxUI() {
+  const sync = e => {
+    const id = $('#selBoxHand').value, v = boxVals(id, App.t, true), k = e.target.dataset.k;
+    if (k === 'sx' || k === 'sy') v[k] = e.target.type === 'range' ? +Math.pow(2, +e.target.value).toFixed(3) : +e.target.value;
+    else if (k === 'box') v.box = e.target.checked ? 1 : 0;
+    else if (k === 'anchor') v.anchor = e.target.value;
+    setBox(id, v); refreshEditors(true, e.target);
+  };
+  for (const el of document.querySelectorAll('#boxFields [data-k]')) el.addEventListener(el.type === 'range' || el.type === 'number' ? 'input' : 'change', sync);
+  $('#selBoxHand').onchange = () => { renderBoxKeys(); refreshEditors(true); };
+  $('#btnBoxKey').onclick = () => { const id = $('#selBoxHand').value; keyNow('hand.' + id, boxVals(id, App.t, true)); delete App.live.box[id]; markLive(); };
+  $('#btnBoxDelKey').onclick = () => { if (Tracks.removeKeyAt('hand.' + $('#selBoxHand').value, App.t)) onTracksChanged(); else status('当前时间没有这个手势的缩放框关键帧', true); };
+  $('#btnBoxReset').onclick = () => { const id = $('#selBoxHand').value; setBox(id, { ...boxVals(id, App.t, true), sx: 1, sy: 1 }); };
+}
+// 面板上的数值跟着时间 / 拖动刷新（正在输入的那个框不动）
+function refreshEditors(force, skip) {
+  if (!App.ready) return;
+  if (App.tab === 'bones' || force) {
+    const v = boneVals(App.selBone, App.t, true);
+    for (const el of document.querySelectorAll('#boneFields [data-k]')) if (el !== skip && el !== document.activeElement) el.value = +(+v[el.dataset.k]).toFixed(3);
+    for (const b of document.querySelectorAll('#g_bones button')) b.classList.toggle('on', b.dataset.v === App.selBone);
+    const hasKey = Tracks.keys('bone.' + App.selBone).some(k => Math.abs(k.t - App.t) < 1e-3);
+    $('#btnBoneKey').textContent = hasKey ? '◆ 更新关键帧' : '◇ 记关键帧';
+  }
+  if (App.tab === 'pose' || force) {
+    const id = $('#selBoxHand').value, v = boxVals(id, App.t, true);
+    for (const el of document.querySelectorAll('#boxFields [data-k]')) {
+      if (el === skip || el === document.activeElement) continue;
+      const k = el.dataset.k;
+      if (k === 'box') el.checked = !!v.box;
+      else if (k === 'anchor') el.value = v.anchor;
+      else el.value = el.type === 'range' ? Math.log2(Math.max(0.05, Math.abs(v[k]))).toFixed(3) : +(+v[k]).toFixed(3);
+    }
+  }
+}
+function keyRow(name, k, i, summary) {
+  const tr = document.createElement('tr');
+  const ti = document.createElement('input'); ti.type = 'number'; ti.step = '0.01'; ti.value = k.t;
+  ti.onchange = () => { const K = Tracks.keys(name); K[i].t = Math.max(0, +ti.value); K.sort((a, b) => a.t - b.t); onTracksChanged(); };
+  const es = document.createElement('select'); for (const [ek, e] of Object.entries(EASES)) es.appendChild(new Option(e.label, ek)); es.value = k.ease;
+  es.onchange = () => { k.ease = es.value; onTracksChanged(); };
+  const go = document.createElement('button'); go.textContent = '跳到'; go.onclick = () => seek(k.t);
+  const del = document.createElement('button'); del.textContent = '✕'; del.onclick = () => { Tracks.keys(name).splice(i, 1); if (!Tracks.keys(name).length) delete Tracks.data[name]; onTracksChanged(); };
+  tr.insertCell().appendChild(ti); tr.insertCell().textContent = summary; tr.insertCell().appendChild(es); tr.insertCell().append(go, del);
+  return tr;
+}
+const fmtBone = v => `角${(+v.rot).toFixed(1)}° 移${(+v.x).toFixed(0)},${(+v.y).toFixed(0)} 缩${(+v.sx).toFixed(2)}×${(+v.sy).toFixed(2)}`;
+const fmtBox = v => `${(+v.sx).toFixed(2)}×${(+v.sy).toFixed(2)}${v.box ? ' 显示框' : ''}${v.anchor === 'center' ? ' 中心' : ''}`;
+function renderBoneKeys() {
+  const name = 'bone.' + App.selBone, K = Tracks.keys(name), box = $('#boneKeyList');
+  if (!K.length) { box.innerHTML = '<span class="dim">还没有关键帧</span>'; return; }
+  const tb = document.createElement('table'); K.forEach((k, i) => tb.appendChild(keyRow(name, k, i, fmtBone({ ...BONE_DEF, ...k.v })))); box.replaceChildren(tb);
+}
+function renderBoxKeys() {
+  const name = 'hand.' + $('#selBoxHand').value, K = Tracks.keys(name), box = $('#boxKeyList');
+  if (!K.length) { box.innerHTML = '<span class="dim">这个手势还没有缩放框关键帧（默认 1×1、不显示框）</span>'; return; }
+  const tb = document.createElement('table'); K.forEach((k, i) => tb.appendChild(keyRow(name, k, i, fmtBox({ ...BOX_DEF, ...k.v })))); box.replaceChildren(tb);
+}
+function onTracksChanged() { renderBoneKeys(); renderBoxKeys(); refreshEditors(true); }
+
+// 在预览上拖：缩放框手柄 / 骨骼末端（转动，IK）/ 按住 Shift 拖关节（平移）
+function viewPt(e) { const v = $('#view'), r = v.getBoundingClientRect(); return { x: (e.clientX - r.left) * v.width / r.width, y: (e.clientY - r.top) * v.height / r.height }; }
+function bindViewDrag() {
+  const view = $('#view');
+  const near = (a, b, px) => Math.hypot(a.x - b.x, a.y - b.y) < px;
+  view.addEventListener('pointerdown', e => {
+    const F = App.frame; if (!F || e.button !== 0) return;
+    const q = viewPt(e), tol = 14 * view.width / view.getBoundingClientRect().width;
+    const bh = $('#selBoxHand').value;
+    if ($('#chkBoxEdit').checked && F.vis.includes(bh)) {
+      const r = handRect(bh), P = boxHandles(F.HM[bh].M, r);
+      const hi = P.findIndex(p => near(p, q, tol));
+      if (hi >= 0) {
+        const [x, y, w, h] = r, c0 = [[x, y], [x + w / 2, y], [x + w, y], [x + w, y + h / 2], [x + w, y + h], [x + w / 2, y + h], [x, y + h], [x, y + h / 2]][hi];
+        App.drag = { type: 'box', g: bh, hi, c0, nb: F.HM[bh].nb, anchor: F.HM[bh].anchor, base: boxVals(bh, App.t, true) };
+        view.setPointerCapture(e.pointerId); e.preventDefault(); return;
+      }
+    }
+    if (!showBones()) return;
+    let best = null;
+    for (const b of BONES) {
+      const pt = e.shiftKey ? bonePivotW(F.W, b.id) : boneTipW(F.W, b.id), d = Math.hypot(pt.x - q.x, pt.y - q.y);
+      if (d < tol * 1.3 && (!best || d < best.d)) best = { id: b.id, d };
+    }
+    if (!best) return;
+    App.selBone = best.id; renderBoneKeys();
+    const chain = []; let id = best.id;
+    for (let n = 0; n < +$('#selIKLen').value && id; n++) { chain.push(id); id = boneById[id].parent; }
+    const base = {}; for (const c of chain) base[c] = boneVals(c, App.t, true);
+    const par = boneById[best.id].parent;
+    App.drag = { type: e.shiftKey ? 'move' : 'ik', id: best.id, chain, base, pose: clonePose(F.p), root: F.root, start: q,
+      inv: (par ? F.W[par] : F.root).inverse(), baseMove: boneVals(best.id, App.t, true) };
+    view.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  view.addEventListener('pointermove', e => {
+    const D = App.drag; if (!D) return;
+    const q = viewPt(e);
+    if (D.type === 'box') {
+      const inv = D.nb.inverse(), l = inv.transformPoint(new DOMPoint(q.x, q.y)), [ax, ay] = D.anchor, [cx, cy] = D.c0;
+      const v = { ...D.base };
+      const fx = [0, 2, 3, 4, 6, 7].includes(D.hi) && Math.abs(cx - ax) > 2, fy = [0, 1, 2, 4, 5, 6].includes(D.hi) && Math.abs(cy - ay) > 2;
+      const lim = s => Math.sign(s || 1) * clamp(Math.abs(s), 0.05, 12);
+      if (fx) v.sx = lim((l.x - ax) / (cx - ax));
+      if (fy) v.sy = lim((l.y - ay) / (cy - ay));
+      if (e.shiftKey && fx && fy) { const s = Math.abs(v.sx - 1) > Math.abs(v.sy - 1) ? v.sx : v.sy; v.sx = v.sy = s; }
+      v.sx = +v.sx.toFixed(3); v.sy = +v.sy.toFixed(3);
+      setBox(D.g, v);
+    } else if (D.type === 'ik') {
+      const delta = solveIK(D.root, D.pose, D.id, D.chain, q);
+      for (const c of D.chain) setBone(c, { ...D.base[c], rot: +(D.base[c].rot + (delta[c] || 0)).toFixed(2) });
+    } else {
+      const a = D.inv.transformPoint(new DOMPoint(D.start.x, D.start.y)), b = D.inv.transformPoint(new DOMPoint(q.x, q.y));
+      setBone(D.id, { ...D.baseMove, x: +(D.baseMove.x + b.x - a.x).toFixed(1), y: +(D.baseMove.y + b.y - a.y).toFixed(1) });
+    }
+  });
+  const end = () => { App.drag = null; };
+  view.addEventListener('pointerup', end); view.addEventListener('pointercancel', end);
+}
+
 // ---------- 时间轴 ----------
-const EV_ROW = { expr: 0, mouth: 1, eyes: 2, ears: 2, whiskers: 2, hand: 3, laptop: 3, final: 3, body: 3, act: 4 };
+const EV_ROW = { expr: 0, mouth: 1, eyes: 2, ears: 2, earL: 2, earR: 2, whiskers: 2, hand: 3, handOff: 3, laptop: 3, wasted: 3, final: 3, body: 3, act: 4, gact: 4 };
+const handName = id => (id === 'all' ? '全部' : HANDS[id]?.label || id);
 function evLabel(e) {
   const find = (arr, v) => (arr.find(x => x.v === v) || {}).label || v;
   switch (e.k) {
     case 'expr': return EXPRESSIONS[e.v]?.label || e.v;
     case 'mouth': return e.v === null ? '嘴:自动' : '嘴:' + find(MOUTHS, e.v);
     case 'eyes': return '眼:' + find(EYES, e.v);
-    case 'ears': return '耳:' + find(EARS, e.v);
+    case 'ears': return '耳:' + find(EAR_POSES, e.v);
+    case 'earL': return '左耳:' + find(EAR_POSES, e.v);
+    case 'earR': return '右耳:' + find(EAR_POSES, e.v);
     case 'whiskers': return '胡子:' + find(WHISKERS, e.v);
-    case 'hand': return '手:' + find(HANDS, e.v);
+    case 'hand': return e.v === 'none' ? '手:全放下' : e.v === 'laptop' ? '手:展示+电脑(旧)' : '手:' + handName(e.v);
+    case 'handOff': return '放下:' + handName(e.v);
+    case 'gact': { const [g, an] = String(e.v).split(':'); return `${handName(g)}·${HAND_ANIMS[an]?.label || an}`; }
     case 'final': return 'FINAL ' + (e.v ? '开' : '关');
     case 'body': return '身体(旧，已忽略)';
     case 'laptop': return '电脑:' + find(LAPTOP, e.v);
+    case 'wasted': return 'WASTED ' + (e.v ? '开' : '关');
     case 'act': return ACTIONS[e.v]?.label || e.v;
   }
   return e.k;
 }
+const trackLabel = n => { const [type, id] = n.split('.'); return type === 'bone' ? '骨骼·' + (boneById[id]?.label || id) : '缩放框·' + handName(id); };
 function drawTimeline() {
   const cv = $('#timeline'), dpr = window.devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.clientHeight;
-  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const span = Math.min(+$('#inSpan').value, App.duration);
-  if (App.t < App.view0 || App.t > App.view0 + span * 0.85) App.view0 = clamp(App.t - span * 0.2, 0, Math.max(0, App.duration - span));
+  if (!tlDrag && (App.t < App.view0 || App.t > App.view0 + span * 0.85)) App.view0 = clamp(App.t - span * 0.2, 0, Math.max(0, App.duration - span));
   if (App.view0 + span > App.duration) App.view0 = Math.max(0, App.duration - span);
   const t0 = App.view0, X = t => (t - t0) / span * W;
   App.tlView = { t0, span, W };
 
+  if (App.sel) {
+    const a = X(Math.min(App.sel.t0, App.sel.t1)), b = X(Math.max(App.sel.t0, App.sel.t1));
+    ctx.fillStyle = 'rgba(95,179,154,.18)'; ctx.fillRect(a, 0, b - a, H);
+    ctx.fillStyle = '#5fb39a'; ctx.fillRect(a, 0, 1, H); ctx.fillRect(b - 1, 0, 1, H);
+  }
   ctx.font = '10px sans-serif'; ctx.fillStyle = '#666'; ctx.strokeStyle = '#2b2f36';
   const step = span > 40 ? 5 : span > 12 ? 1 : 0.5;
   for (let s = Math.ceil(t0 / step) * step; s <= t0 + span; s += step) { const x = X(s); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(s.toFixed(step < 1 ? 1 : 0), x + 2, 10); }
@@ -366,16 +645,32 @@ function drawTimeline() {
   for (const e of App.events) {
     if (e.t < t0 - 2 || e.t > t0 + span) continue;
     const x = X(e.t), y = 66 + (EV_ROW[e.k] || 0) * 9;
-    ctx.fillStyle = e.k === 'act' ? '#e8463a' : e.k === 'mouth' ? '#e9c13b' : '#5fb39a';
+    ctx.fillStyle = e.k === 'act' || e.k === 'gact' ? '#e8463a' : e.k === 'mouth' ? '#e9c13b' : '#5fb39a';
     ctx.fillRect(x, y, 2, 8); ctx.fillText(evLabel(e), x + 3, y + 8);
+  }
+  // 骨骼 / 缩放框关键帧：菱形
+  const y = 66 + 5 * 9 + 5;
+  for (const [n, K] of Object.entries(Tracks.data)) {
+    ctx.fillStyle = n.startsWith('bone.') ? (n === 'bone.' + App.selBone ? '#ffd23f' : '#ff6b6b') : '#4a8fd9';
+    for (const k of K) { if (k.t < t0 || k.t > t0 + span) continue; const x = X(k.t); ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 4, y); ctx.lineTo(x, y + 4); ctx.lineTo(x - 4, y); ctx.fill(); }
   }
   ctx.fillStyle = '#ff5a4e'; ctx.fillRect(X(App.t) - 1, 0, 2, H);
 }
-let tlDrag = false;
-const tlSeek = e => { const r = $('#timeline').getBoundingClientRect(), v = App.tlView; if (v) seek(v.t0 + (e.clientX - r.left) / v.W * v.span); };
-$('#timeline').addEventListener('pointerdown', e => { tlDrag = true; tlSeek(e); });
-window.addEventListener('pointermove', e => { if (tlDrag) tlSeek(e); });
-window.addEventListener('pointerup', () => { tlDrag = false; });
+let tlDrag = null;
+const tlTime = e => { const r = $('#timeline').getBoundingClientRect(), v = App.tlView; return v ? clamp(v.t0 + (e.clientX - r.left) / v.W * v.span, 0, App.duration) : 0; };
+$('#timeline').addEventListener('pointerdown', e => {
+  if (e.shiftKey) { const t = tlTime(e); tlDrag = 'sel'; App.sel = { t0: t, t1: t }; }
+  else { tlDrag = 'seek'; seek(tlTime(e)); }
+});
+window.addEventListener('pointermove', e => {
+  if (tlDrag === 'seek') seek(tlTime(e));
+  else if (tlDrag === 'sel') { App.sel.t1 = tlTime(e); syncSelInputs(); }
+});
+window.addEventListener('pointerup', () => {
+  if (tlDrag === 'sel' && Math.abs(App.sel.t1 - App.sel.t0) < 0.02) App.sel = null;
+  if (tlDrag === 'sel') syncSelInputs();
+  tlDrag = null;
+});
 
 // ---------- 关键帧列表 ----------
 function renderEventList() {
@@ -393,6 +688,97 @@ function renderEventList() {
     const c = tr.insertCell(); c.append(go, del);
   });
   box.replaceChildren(tb);
+}
+
+// ---------- 片段蓝图：把选区里的关键帧记下来，之后整段部署，或者交给 agent 参考修改 ----------
+function syncSelInputs() {
+  const s = App.sel;
+  $('#selT0').value = s ? Math.min(s.t0, s.t1).toFixed(2) : '';
+  $('#selT1').value = s ? Math.max(s.t0, s.t1).toFixed(2) : '';
+}
+function stateSnapshot(t) {
+  const st = stateAt(t, false).st;
+  return { expr: st.expr, eyes: st.eyes, earL: st.earL, earR: st.earR, whiskers: st.whiskers, mouth: st.mouth, hands: { ...st.hands }, laptop: st.laptop, wasted: st.wasted };
+}
+// 把起始状态还原成一串关键帧（表情放最前，后面是单独改过的部分）
+function snapshotEvents(s) {
+  const ev = [{ k: 'expr', v: s.expr }, { k: 'eyes', v: s.eyes }, { k: 'earL', v: s.earL }, { k: 'earR', v: s.earR }, { k: 'whiskers', v: s.whiskers }, { k: 'mouth', v: s.mouth ?? null }, { k: 'handOff', v: 'all' }];
+  for (const id of new Set([s.hands?.L, s.hands?.R].filter(Boolean))) ev.push({ k: 'hand', v: id });
+  ev.push({ k: 'laptop', v: s.laptop || 'none' }, { k: 'wasted', v: !!s.wasted });
+  return ev;
+}
+function makeBlueprint(t0, t1, name) {
+  const dur = +(t1 - t0).toFixed(3);
+  const events = App.events.filter(e => e.t >= t0 && e.t < t1).map(e => ({ t: +(e.t - t0).toFixed(3), k: e.k, v: e.v }));
+  const tracks = {};
+  for (const n of Object.keys(Tracks.data)) {
+    const def = n.startsWith('bone.') ? BONE_DEF : BOX_DEF, v0 = Tracks.eval(n, t0, def);
+    const inside = Tracks.keys(n).filter(k => k.t >= t0 && k.t <= t1).map(k => ({ t: +(k.t - t0).toFixed(3), v: { ...k.v }, ease: k.ease }));
+    const changed = JSON.stringify(v0) !== JSON.stringify(def);
+    if (!inside.length && !changed) continue;
+    // 片段开头已经不是默认值（前面有关键帧带过来的），补一个开头关键帧，部署后从同一个姿势开始
+    if (changed && (!inside.length || inside[0].t > 0)) inside.unshift({ t: 0, v: v0, ease: 'step' });
+    tracks[n] = inside;
+  }
+  const lines = [...events.map(e => ({ t: e.t, s: evLabel(e) })),
+    ...Object.entries(tracks).flatMap(([n, K]) => K.map(k => ({ t: k.t, s: `${trackLabel(n)}：${n.startsWith('bone.') ? fmtBone({ ...BONE_DEF, ...k.v }) : fmtBox({ ...BOX_DEF, ...k.v })}（${EASES[k.ease]?.label || k.ease}）` })))]
+    .sort((a, b) => a.t - b.t).map(l => `${l.t.toFixed(2)}s  ${l.s}`);
+  return {
+    type: 'avatar_blueprint', version: 1, name: name || `片段 ${t0.toFixed(1)}–${t1.toFixed(1)}s`, duration: dur,
+    source: { t0: +t0.toFixed(3), t1: +t1.toFixed(3), audio: App.audioName || null, psd: PSD_FILE }, created: new Date().toISOString(),
+    startState: stateSnapshot(t0), events, tracks, summary: lines,
+    notes: 't 为相对片段开头的秒数。events 的 k/v 和工程里的关键帧一样；tracks 是骨骼（bone.<骨骼>）和缩放框（hand.<手势>）的插值关键帧，ease 是插值方式。格式说明见 README「片段蓝图」。',
+  };
+}
+function deployBlueprint(bp, T, { clear, withState }) {
+  const t1 = T + bp.duration;
+  if (clear) { App.events = App.events.filter(e => e.t < T || e.t >= t1); Tracks.clearRange(T, t1 + 1e-6); }
+  if (withState && bp.startState) for (const e of snapshotEvents(bp.startState)) insertEvent({ t: +T.toFixed(3), ...e });
+  for (const e of bp.events || []) insertEvent({ t: +(T + e.t).toFixed(3), k: e.k, v: e.v });
+  for (const [n, K] of Object.entries(bp.tracks || {})) for (const k of K) Tracks.setKey(n, T + k.t, k.v, k.ease);
+  if (t1 > App.duration && !App.audioBuf) { App.duration = Math.ceil(t1); $('#inDur').value = App.duration; }
+  renderEventList(); onTracksChanged();
+  App.sel = { t0: T, t1 }; syncSelInputs();
+  status(`已部署「${bp.name}」到 ${T.toFixed(2)}–${t1.toFixed(2)}s：${(bp.events || []).length} 个关键帧，${Object.keys(bp.tracks || {}).length} 条骨骼 / 缩放框轨道`);
+}
+function saveBps() { try { localStorage.setItem('avatarBlueprints', JSON.stringify(App.bps)); } catch (err) { status('蓝图存不进浏览器：' + err.message, true); } }
+function addBp(bp) { App.bps.push(bp); saveBps(); renderBps(); }
+function renderBps() {
+  const box = $('#bpList');
+  if (!App.bps.length) { box.innerHTML = '<span class="dim">还没有蓝图。选一段时间轴后点「记录选区」。</span>'; return; }
+  box.replaceChildren(...App.bps.map((bp, i) => {
+    const row = document.createElement('div'); row.className = 'bp';
+    const info = document.createElement('div');
+    info.innerHTML = `<b></b> <span class="dim">${bp.duration.toFixed(2)}s · ${(bp.events || []).length} 个关键帧 · ${Object.keys(bp.tracks || {}).length} 条轨道</span>`;
+    info.querySelector('b').textContent = bp.name;
+    const btn = (txt, fn, title) => { const b = document.createElement('button'); b.textContent = txt; b.onclick = fn; if (title) b.title = title; return b; };
+    const ops = document.createElement('div'); ops.className = 'row';
+    ops.append(
+      btn('部署到当前时间', () => deployBlueprint(bp, App.t, { clear: $('#chkBpClear').checked, withState: $('#chkBpState').checked })),
+      btn('下载', () => download(new Blob([JSON.stringify(bp, null, 1)], { type: 'application/json' }), `蓝图_${bp.name}.json`)),
+      btn('复制', async () => { try { await navigator.clipboard.writeText(JSON.stringify(bp, null, 1)); status(`「${bp.name}」的 JSON 已复制，可以直接贴给 agent`); } catch (err) { status('复制失败：' + err.message, true); } }, '复制 JSON，贴给 agent 参考或修改'),
+      btn('✕', () => { if (confirm(`删除蓝图「${bp.name}」？`)) { App.bps.splice(i, 1); saveBps(); renderBps(); } }));
+    row.append(info, ops); return row;
+  }));
+}
+function bindBlueprints() {
+  try { App.bps = JSON.parse(localStorage.getItem('avatarBlueprints') || '[]'); } catch { App.bps = []; }
+  const fromInputs = () => { const a = $('#selT0').value, b = $('#selT1').value; App.sel = a !== '' && b !== '' ? { t0: +a, t1: +b } : null; };
+  $('#selT0').onchange = fromInputs; $('#selT1').onchange = fromInputs;
+  $('#btnSelClear').onclick = () => { App.sel = null; syncSelInputs(); };
+  $('#btnBpRecord').onclick = () => {
+    if (!App.sel) { status('先在时间轴上按住 Shift 拖出一段，或者填起止时间', true); return; }
+    const t0 = Math.min(App.sel.t0, App.sel.t1), t1 = Math.max(App.sel.t0, App.sel.t1);
+    const bp = makeBlueprint(t0, t1, $('#bpName').value.trim());
+    addBp(bp); $('#bpName').value = '';
+    status(`已记录蓝图「${bp.name}」：${bp.events.length} 个关键帧，${Object.keys(bp.tracks).length} 条轨道`);
+  };
+  $('#fileBp').onchange = async e => { for (const f of e.target.files) importJSON(JSON.parse(await f.text())); e.target.value = ''; };
+  renderBps();
+}
+function importJSON(o) {
+  if (o && o.type === 'avatar_blueprint') { addBp(o); status(`已导入蓝图「${o.name}」`); }
+  else loadProject(o);
 }
 
 // ---------- 素材加载 ----------
@@ -415,7 +801,7 @@ function makeGreenScreen(L) {
       if (!mask[r] && d[r * 4 + 3] > 200 && lum(r) > 200) { mask[r] = 1; st.push(r); }
     }
   }
-  const G = [0, 255, 0], W = 250, B = 40;
+  const G = [0, 255, 0], Wl = 250, B = 40;
   for (let pass = 2; pass <= 3; pass++) {   // 往外扩两圈，标成 2、3
     for (let q = 0; q < w * h; q++) {
       if (mask[q]) continue;
@@ -425,8 +811,8 @@ function makeGreenScreen(L) {
   }
   for (let q = 0; q < w * h; q++) {
     if (!mask[q]) continue;
-    const t = mask[q] === 1 ? 1 : Math.min(1, Math.max(0, (lum(q) - B) / (W - B)));
-    for (let k = 0; k < 3; k++) d[q * 4 + k] = Math.round(Math.min(255, Math.max(0, mask[q] === 1 ? G[k] : d[q * 4 + k] + t * (G[k] - W))));
+    const t = mask[q] === 1 ? 1 : Math.min(1, Math.max(0, (lum(q) - B) / (Wl - B)));
+    for (let k = 0; k < 3; k++) d[q * 4 + k] = Math.round(Math.min(255, Math.max(0, mask[q] === 1 ? G[k] : d[q * 4 + k] + t * (G[k] - Wl))));
   }
   g.putImageData(img, 0, 0);
   return c;
@@ -445,7 +831,7 @@ async function loadPSD(buf, name) {
     App.layers = psd.layers; App.ready = true;
     $('#psdInfo').textContent = `${name}：${psd.width}×${psd.height}，${psd.layers.length} 条图层记录`;
     buildLayerList();
-    if (psd.layers.length !== RIG.expectedRecords) status(`PSD 有 ${psd.layers.length} 条图层记录，rig.js 按 ${RIG.expectedRecords} 条写的：图层顺序可能变了，请到「图层检查」核对`, true);
+    if (psd.layers.length !== RIG.expectedRecords) status(`PSD 有 ${psd.layers.length} 条图层记录，rig.js 按 ${RIG.expectedRecords} 条（${PSD_FILE}）写的：图层顺序可能变了，请到「图层」选项卡核对`, true);
     else status('PSD 已载入。按按钮或键盘试试；勾「录制按键」后按键会记进时间轴。');
   } catch (err) { status('PSD 读取失败：' + err.message, true); console.error(err); }
 }
@@ -491,14 +877,15 @@ async function analyze() {
 function buildLayerList() {
   const role = {};
   const put = (idx, r) => { if (idx != null) (role[idx] = role[idx] || []).push(r); };
-  put(RIG.head, '头底色'); put(RIG.lens, '镜片白底'); put(RIG.laptop.layer, '电脑'); put(RIG.laptop.final, '电脑屏幕:FINAL 字'); put(RIG.body.mirror, '身体镜像版(期待手)');
+  put(RIG.head, '头底色'); put(RIG.lens, '镜片白底'); put(RIG.laptop.layer, '电脑'); put(RIG.laptop.final, '电脑屏幕:FINAL 字'); put(RIG.body.mirror, '身体镜像版');
+  put(RIG.wasted, 'WASTED 字');
   RIG.body.normal.forEach(i => put(i, '身体(抖动)')); RIG.neck.forEach(i => put(i, '下巴毛(抖动)'));
   RIG.face.forEach(i => put(i, '脸线稿(抖动)')); RIG.glasses.forEach(i => put(i, '眼镜线稿(抖动)'));
-  for (const [k, a] of Object.entries(RIG.ears)) a.forEach(i => put(i, '耳朵:' + (EARS.find(e => e.v === k) || {}).label));
-  for (const [k, e] of Object.entries(RIG.eyes)) { put(e.eye, '眼睛:' + e.label); put(e.white, '眼底:' + e.label); }
+  for (const [side, poses] of Object.entries(RIG.ears)) for (const [k, a] of Object.entries(poses)) a.forEach(i => put(i, `${side === 'L' ? '左' : '右'}耳:` + (EAR_POSES.find(e => e.v === k) || {}).label + (a.length > 1 ? '(抖动)' : '')));
+  for (const [k, e] of Object.entries(RIG.eyes)) { e.eye.forEach(i => put(i, '眼睛:' + e.label + (e.eye.length > 1 ? '(抖动)' : ''))); put(e.white, '眼底:' + e.label); }
   for (const [k, i] of Object.entries(RIG.mouths)) put(i, '嘴:' + (MOUTHS.find(m => m.v === k) || {}).label);
   for (const [k, a] of Object.entries(RIG.whiskers)) a.forEach(i => put(i, '胡子:' + (WHISKERS.find(f => f.v === k) || {}).label + (a.length > 1 ? '(抖动)' : '')));
-  for (const [k, a] of Object.entries(RIG.hands)) a.forEach(i => put(i, '手势:' + (HANDS.find(h => h.v === k) || {}).label));
+  for (const [k, G] of Object.entries(HANDS)) put(G.layer, `手势(${G.side.map(s => (s === 'L' ? '左' : '右')).join('')}):${G.label}${G.isBody ? '（含衣服）' : ''}`);
   const box = $('#layerList'); box.replaceChildren();
   for (let i = App.layers.length - 1; i >= 0; i--) {
     const L = App.layers[i];
@@ -516,18 +903,26 @@ function buildLayerList() {
 // ---------- 工程 ----------
 function projectJSON() {
   return JSON.stringify({
-    app: 'avatar_generator', version: 1, audio: App.audioName, duration: App.duration,
-    settings: { ...S }, grade: Grade.toJSON(), events: App.events, visemes: App.visemes ? LipSync.encode(App.visemes) : null,
+    app: 'avatar_generator', version: 2, psd: PSD_FILE, audio: App.audioName, duration: App.duration,
+    settings: { ...S }, grade: Grade.toJSON(), events: App.events, tracks: Tracks.toJSON(),
+    visemes: App.visemes ? LipSync.encode(App.visemes) : null,
   }, null, 1);
 }
 function loadProject(o) {
-  if (o.settings) writeSettings(o.settings);
+  const s = o.settings ? { ...o.settings } : null;
+  // 旧版 PSD（812 宽）的工程：电脑图层换了大小和位置，换算到新 PSD 上同一个位置
+  if (s && !(o.version >= 2) && 'lapScale' in s) {
+    const so = +s.lapScale;
+    s.lapScale = +(so * 1.254).toFixed(3); s.lapX = Math.round(+s.lapX + so * 43.1 + 219); s.lapY = Math.round(+s.lapY - so * 58.3);
+  }
+  if (s) writeSettings(s);
   if (o.grade) Grade.load(o.grade);
   App.events = (o.events || []).slice().sort((a, b) => a.t - b.t);
+  Tracks.load(o.tracks);
   if (o.visemes) App.visemes = LipSync.decode(o.visemes);
   if (!App.audioBuf && o.duration) App.duration = o.duration;
-  renderEventList();
-  status(`工程已载入：${App.events.length} 个关键帧` + (o.audio && o.audio !== App.audioName ? `。记得载入配音 ${o.audio} 听效果` : ''));
+  renderEventList(); onTracksChanged();
+  status(`工程已载入：${App.events.length} 个关键帧，${Object.keys(Tracks.data).length} 条骨骼 / 缩放框轨道` + (o.audio && o.audio !== App.audioName ? `。记得载入配音 ${o.audio} 听效果` : ''));
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
 
@@ -757,11 +1152,14 @@ function bindGrade() {
 }
 
 // ---------- 界面绑定 ----------
-// 右侧选项卡：记住上次打开的那个；Alt+1–5 切换
+// 右侧选项卡：记住上次打开的那个；Alt+1–6 切换
 function showTab(name) {
   if (!$('#tab-' + name)) name = 'pose';
+  App.tab = name;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const t of document.querySelectorAll('#panel .tab')) t.classList.toggle('on', t.id === 'tab-' + name);
+  $('#view').classList.toggle('editing', name === 'bones');
+  refreshEditors(true);
   try { localStorage.setItem('avatarTab', name); } catch {}
 }
 function bindTabs() {
@@ -769,7 +1167,7 @@ function bindTabs() {
   btns.forEach((b, i) => { b.innerHTML += `<kbd>Alt+${i + 1}</kbd>`; b.onclick = () => showTab(b.dataset.tab); });
   document.addEventListener('keydown', e => {
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    const i = '12345'.indexOf(e.key);
+    const i = '123456'.indexOf(e.key);
     if (i >= 0 && btns[i]) { e.preventDefault(); showTab(btns[i].dataset.tab); }
   });
   let last = null; try { last = localStorage.getItem('avatarTab'); } catch {}
@@ -777,16 +1175,17 @@ function bindTabs() {
 }
 
 function bindUI() {
-  bindTabs(); buildButtons(); renderEventList(); bindGrade();
+  buildButtons(); buildBoneUI(); buildBoxUI(); bindTabs(); renderEventList(); bindGrade(); bindBlueprints(); bindViewDrag();
+  renderBoneKeys(); renderBoxKeys();
   $('#btnPlay').onclick = () => (App.playing ? pause() : play());
   $('#btnStart').onclick = () => seek(0);
   $('#chkRec').onchange = e => { App.recording = e.target.checked; };
   $('#inDur').onchange = e => { if (!App.audioBuf) App.duration = Math.max(1, +e.target.value); };
-  $('#liveClear').onclick = () => { App.live.over = []; App.live.acts = []; $('#liveBadge').hidden = true; };
+  $('#liveClear').onclick = () => { App.live = { over: [], acts: [], bone: {}, box: {} }; markLive(); refreshEditors(true); };
   $('#btnUndo').onclick = () => { const e = App.history.pop(); const i = App.events.indexOf(e); if (i >= 0) App.events.splice(i, 1); renderEventList(); };
-  $('#btnClearEv').onclick = () => { if (confirm('清空全部关键帧？')) { App.events = []; App.history = []; renderEventList(); } };
+  $('#btnClearEv').onclick = () => { if (confirm('清空全部关键帧（包括骨骼和缩放框的）？')) { App.events = []; App.history = []; Tracks.data = {}; renderEventList(); onTracksChanged(); } };
   $('#btnSaveProj').onclick = () => download(new Blob([projectJSON()], { type: 'application/json' }), 'avatar_project.json');
-  $('#fileProj').onchange = async e => { const f = e.target.files[0]; if (f) loadProject(JSON.parse(await f.text())); };
+  $('#fileProj').onchange = async e => { const f = e.target.files[0]; if (f) importJSON(JSON.parse(await f.text())); };
   $('#filePSD').onchange = async e => { const f = e.target.files[0]; if (f) loadPSD(await f.arrayBuffer(), f.name); };
   $('#fileAudio').onchange = e => { const f = e.target.files[0]; if (f) loadAudio(f); };
   $('#fileVideo').onchange = e => { const f = e.target.files[0]; if (f) { refVideo.src = URL.createObjectURL(f); refVideo.currentTime = App.t; $('#selBg').value = 'video'; $('#selBg').onchange(); } };
@@ -815,7 +1214,7 @@ function bindUI() {
     for (const f of e.dataTransfer.files) {
       const n = f.name.toLowerCase();
       if (n.endsWith('.psd')) loadPSD(await f.arrayBuffer(), f.name);
-      else if (n.endsWith('.json')) loadProject(JSON.parse(await f.text()));
+      else if (n.endsWith('.json')) importJSON(JSON.parse(await f.text()));
       else if (f.type.startsWith('audio') || /\.(wav|mp3|m4a|aac|flac|ogg)$/.test(n)) loadAudio(f);
       else if (f.type.startsWith('video')) { refVideo.src = URL.createObjectURL(f); $('#selBg').value = 'video'; $('#selBg').onchange(); }
     }
@@ -827,9 +1226,9 @@ function bindUI() {
   requestAnimationFrame(frame);
   if (location.protocol.startsWith('http')) {
     try {
-      const r = await fetch('../vtuber_art.psd');
-      if (r.ok) { await loadPSD(await r.arrayBuffer(), 'vtuber_art.psd'); return; }
+      const r = await fetch('../' + PSD_FILE);
+      if (r.ok) { await loadPSD(await r.arrayBuffer(), PSD_FILE); return; }
     } catch {}
   }
-  status('请选择或拖入 vtuber_art.psd');
+  status(`请选择或拖入 ${PSD_FILE}`);
 })();
