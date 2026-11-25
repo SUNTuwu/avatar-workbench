@@ -1,0 +1,137 @@
+{
+  "app": "avatar_generator",
+  "version": 1,
+  "audio": "",
+  "duration": 29,
+  "settings": {
+    "boilFps": 8,
+    "jitter": 0.6,
+    "idle": true,
+    "blink": true,
+    "earTwitch": true,
+    "talkBob": true,
+    "startHidden": false,
+    "outW": 1200,
+    "outH": 1000,
+    "scale": 1,
+    "ax": 720,
+    "ay": 960,
+    "fps": 30,
+    "lapScale": 0.65,
+    "lapX": -228,
+    "lapY": 100
+  },
+  "events": [
+    { "t": 0, "k": "expr", "v": "happy" },
+    { "t": 0.05, "k": "act", "v": "wave" },
+    { "t": 1.73, "k": "expr", "v": "normal" },
+    { "t": 2.2, "k": "hand", "v": "finger" },
+    { "t": 2.24, "k": "act", "v": "sway" },
+    { "t": 3.52, "k": "expr", "v": "sparkle" },
+    { "t": 4.98, "k": "expr", "v": "happy" },
+    { "t": 5.08, "k": "act", "v": "hop2" },
+    { "t": 6.75, "k": "hand", "v": "none" },
+    { "t": 7, "k": "expr", "v": "shock" },
+    { "t": 7.1, "k": "act", "v": "shake" },
+    { "t": 8.32, "k": "hand", "v": "show" },
+    { "t": 8.32, "k": "laptop", "v": "final" },
+    { "t": 8.38, "k": "act", "v": "sway" },
+    { "t": 9.8, "k": "expr", "v": "panic" },
+    { "t": 9.84, "k": "act", "v": "tremble" },
+    { "t": 10.52, "k": "act", "v": "tremble" },
+    { "t": 11.8, "k": "act", "v": "nod" },
+    { "t": 13.2, "k": "act", "v": "tremble" },
+    { "t": 14.52, "k": "laptop", "v": "none" },
+    { "t": 14.52, "k": "hand", "v": "none" },
+    { "t": 14.52, "k": "expr", "v": "normal" },
+    { "t": 14.8, "k": "act", "v": "tilt" },
+    { "t": 16.12, "k": "expr", "v": "sparkle" },
+    { "t": 16.28, "k": "act", "v": "sway" },
+    { "t": 17.8, "k": "expr", "v": "drool" },
+    { "t": 17.8, "k": "mouth", "v": "drool" },
+    { "t": 17.95, "k": "act", "v": "bounce" },
+    { "t": 19.22, "k": "mouth", "v": null },
+    { "t": 19.22, "k": "expr", "v": "sparkle" },
+    { "t": 19.22, "k": "hand", "v": "think" },
+    { "t": 19.42, "k": "act", "v": "tilt" },
+    { "t": 21.18, "k": "act", "v": "nod" },
+    { "t": 22.45, "k": "hand", "v": "show" },
+    { "t": 22.45, "k": "expr", "v": "happy" },
+    { "t": 22.58, "k": "act", "v": "sway" },
+    { "t": 24.12, "k": "act", "v": "nod" },
+    { "t": 25.07, "k": "hand", "v": "heart" },
+    { "t": 25.07, "k": "expr", "v": "happy" },
+    { "t": 25.23, "k": "act", "v": "bounce" },
+    { "t": 26.96, "k": "hand", "v": "none" },
+    { "t": 27.02, "k": "act", "v": "wave" },
+    { "t": 28.64, "k": "expr", "v": "calm" }
+  ],
+  "visemes": {
+    "fps": 20,
+    "duration": 29,
+    "labels": ".eeeeeoooooooo....aaaaiiiiaaaaaaaaoooo.......aaaaeeeebbbbiiiiaaaaeeee....iiiieeeeiiiiaaaaeeeeooo.....eeeeeiiiiiaaaaaooooaaaaaiiiiiiiii.......eeeeeeeeee....aaaaaooooouuuuiiiiiaaaaaooooaaaaaeeee.....aaaaaoooooiiiii....aaaaaoooooiiii.......ooooeeeeiiiiiiiieeee....iiiiiiiiaaaaiiiiuuuuiii...........bbbbuuuoooaaa...uuuiiiiiiiaaaoooaaaoooeeeeaaaooouuuaaaeee......aaaaaaaaaaaaaaaaaaaaa.........eeeeooooaaaaoooouuuuaaaa...oooouuuuaaaaiiiieeeeaaaaooo..........uuuueeeeeeee....aaaaiiiieeeeiiiiuuuueeeeaaaa........aaaaaaaaiiiiiiiiiiiiiiiieeeeeee.......bbbbaaaaiiii...bbbbaaaaiii............",
+    "energy": "0367636764576400005775477546754676367600000003676367636754675467547750000577457645764576367636760000035775467644676357753676446764577500000003677546764000036764467635775367644676357754676457760000035775467644676300003676446764577500000003676367546754675477500005774577457645764576367600000000000367467457557500047636746745755754764763674674575575476476000000345677766544566777654000000000367636754675477457645763000367636754675477457645763676000000000036763676367600003676367636763676367636763676000000003567776435677654456776534677765000000036754774576300036754774576000000000000"
+  },
+  "captions": [
+    {
+      "start": 0,
+      "end": 2,
+      "text": "Hello，大家好！"
+    },
+    {
+      "start": 2.2,
+      "end": 4.9,
+      "text": "看这边！最近发生了 XXX！"
+    },
+    {
+      "start": 5,
+      "end": 6.8,
+      "text": "真的好开心！"
+    },
+    {
+      "start": 7,
+      "end": 9.7,
+      "text": "等等……马上就要 final 了。"
+    },
+    {
+      "start": 9.8,
+      "end": 11.6,
+      "text": "好急，好急！"
+    },
+    {
+      "start": 11.8,
+      "end": 14.3,
+      "text": "我这几天一直在复习。"
+    },
+    {
+      "start": 14.7,
+      "end": 17.7,
+      "text": "不过嘛，最近搞到了个好玩的……"
+    },
+    {
+      "start": 17.85,
+      "end": 19.05,
+      "text": "馋馋！"
+    },
+    {
+      "start": 19.35,
+      "end": 22.2,
+      "text": "等我考完，我就开始搞！"
+    },
+    {
+      "start": 22.55,
+      "end": 24.9,
+      "text": "对了，在这里求个赞！"
+    },
+    {
+      "start": 25.15,
+      "end": 26.85,
+      "text": "爱你们！"
+    },
+    {
+      "start": 27.05,
+      "end": 28.5,
+      "text": "拜拜～"
+    }
+  ]
+}

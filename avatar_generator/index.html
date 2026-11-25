@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>虚拟形象生成器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <section id="stage">
+    <div id="stageBox" class="bg-checker">
+      <video id="refVideo" muted playsinline></video>
+      <canvas id="view" title="输出画布范围；边框仅在预览中显示"></canvas>
+      <div id="dropHint">把 PSD / 音频 / 参考视频 / 工程 json 拖进来</div>
+      <div id="takeBadge" hidden>● 录音中</div>
+      <div id="liveBadge" hidden>试看中：按键不会进导出　<button id="liveClear">清除试看</button></div>
+    </div>
+    <div id="transport">
+      <button id="btnStart" title="回到开头">⏮</button>
+      <button id="btnPlay" title="播放/暂停（空格）">▶</button>
+      <label class="rec"><input type="checkbox" id="chkRec"> ● 录制按键（Enter）</label>
+      <span id="timeText">0.00 / 20.00 s</span>
+      <label>无音频时长 <input type="number" id="inDur" value="20" min="1" step="1" style="width:56px"> s</label>
+      <label>时间轴可见 <input type="range" id="inSpan" min="3" max="120" value="20"></label>
+    </div>
+    <canvas id="timeline"></canvas>
+    <div id="status">正在初始化…</div>
+  </section>
+
+  <aside id="panel">
+    <nav id="tabs">
+      <button data-tab="lip">口型</button>
+      <button data-tab="pose">调节 / 动画</button>
+      <button data-tab="out">输出 / 色彩</button>
+      <button data-tab="keys">关键帧</button>
+      <button data-tab="layers">图层</button>
+    </nav>
+
+    <!-- 口型：配音、算法、降噪、麦克风 -->
+    <div class="tab" id="tab-lip">
+      <h3>配音</h3>
+      <div class="row"><label class="file">载入配音 <input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a"></label><span id="audioInfo">无</span></div>
+      <div class="row">
+        <button id="btnDenoise">降噪当前配音</button>
+        <label title="噪声最多压低多少 dB；太大人声会发闷">压低 <input type="number" id="inNrVoice" value="15" min="3" max="40" style="width:48px"> dB</label>
+        <button id="btnSaveTake" hidden>保存当前配音 wav</button>
+      </div>
+
+      <h3>口型分析</h3>
+      <div class="grid">
+        <label>算法 <select id="selLip"><option value="vowel">元音识别</option><option value="volume">只看音量</option></select></label>
+        <label title="说话时嘴不动就往右拉，不说话嘴还在动就往左拉">灵敏度 <input type="range" id="inSens" min="-10" max="10" value="0"></label>
+        <label title="分析口型前先减掉噪声（实时和配音都用）"><input type="checkbox" id="chkNrLip" checked> 口型降噪</label>
+        <label>降噪强度 <input type="range" id="inNr" min="1" max="30" value="12"></label>
+        <label title="越大嘴型越稳，但反应慢一点">防闪 <input type="range" id="inStable" min="0" max="10" value="5"></label>
+        <button id="btnAnalyze">重新分析口型</button>
+      </div>
+
+      <h3>麦克风</h3>
+      <div class="row">
+        <button id="btnMic" title="快捷键 M">🎙 开麦克风</button>
+        <select id="selMicDev" style="max-width:170px"><option value="">默认麦克风</option></select>
+      </div>
+      <div class="row"><div id="micBar"><i></i></div><span id="micInfo"></span></div>
+      <div class="row">
+        <button id="btnTake">● 录一段</button>
+        <label><input type="checkbox" id="chkNrTake" checked> 录完自动降噪</label>
+      </div>
+      <div class="dim">录的时候按键自动记成关键帧，停下后录音直接当配音</div>
+    </div>
+
+    <!-- 手动调节和动画 -->
+    <div class="tab" id="tab-pose">
+      <h3>表情 <small>数字键 1–0</small></h3>
+      <div class="btns" id="g_expr"></div>
+      <h3>嘴型 <small>按住字母键临时覆盖；点按钮锁定，点「自动」恢复</small></h3>
+      <div class="btns" id="g_mouth"></div>
+      <h3>眼睛 / 耳朵 / 胡子</h3>
+      <div class="sub">眼睛</div><div class="btns" id="g_eyes"></div>
+      <div class="sub">耳朵</div><div class="btns" id="g_ears"></div>
+      <div class="sub">胡子</div><div class="btns" id="g_whiskers"></div>
+      <h3>手势 <small>期待手会自动换成身体镜像版</small></h3>
+      <div class="btns" id="g_hand"></div>
+      <h3>电脑 <small>托在展示手上，盖住手的后半边</small></h3>
+      <div class="btns" id="g_laptop"></div>
+      <div class="row">
+        <label>缩放 <input type="number" id="s_lapScale" value="0.65" step="0.02" min="0.1"></label>
+        <label>X <input type="number" id="s_lapX" value="-228" step="5"></label>
+        <label>Y <input type="number" id="s_lapY" value="100" step="5"></label>
+      </div>
+      <h3>动作</h3>
+      <div class="btns" id="g_act"></div>
+      <h3>自动动画</h3>
+      <div class="grid">
+        <label>线稿抖动 fps <input type="number" id="s_boilFps" value="8" min="0" max="24"></label>
+        <label>整体微抖 px <input type="number" id="s_jitter" value="0.6" min="0" max="4" step="0.1"></label>
+        <label><input type="checkbox" id="s_idle" checked> 呼吸 / 轻微晃动</label>
+        <label><input type="checkbox" id="s_blink" checked> 自动眨眼</label>
+        <label><input type="checkbox" id="s_earTwitch" checked> 耳朵偶尔抖一下</label>
+        <label title="根据配音或麦克风音量轻微抬头和左右摆动；不是摄像头追踪。关闭后仍会自动对口型，手动点头等动作也照常生效。"><input type="checkbox" id="s_talkBob" checked> 说话时随音量轻晃头</label>
+        <label><input type="checkbox" id="s_startHidden"> 开头隐藏（等「弹入」）</label>
+      </div>
+    </div>
+
+    <!-- 输出和色彩 -->
+    <div class="tab" id="tab-out">
+      <h3>预览</h3>
+      <div class="row">
+        <label>背景 <select id="selBg"><option value="checker">棋盘格</option><option value="green">绿幕</option><option value="white">白</option><option value="video">参考视频</option></select></label>
+        <label class="file">参考视频（只用于预览） <input type="file" id="fileVideo" accept="video/*"></label>
+      </div>
+
+      <h3>滤镜 <small>只调虚拟形象这一层；按住 \ 键看原图</small></h3>
+      <div class="btns" id="g_filter"></div>
+      <div class="row"><label>强度 <input type="range" id="inFilterAmt" min="0" max="100" value="100" style="width:160px"></label><span id="filterAmtTxt">100%</span></div>
+
+      <h3>曲线</h3>
+      <div class="row" id="curveTabs"></div>
+      <canvas id="curveCanvas" width="272" height="272"></canvas>
+      <div class="row"><span id="curveInfo" class="dim">点空白处加点，拖动调整；双击、右键或拖出框外删点</span></div>
+      <div class="row">
+        <button id="btnCurveReset">重置这个通道</button><button id="btnCurveResetAll">重置全部曲线</button>
+        <button id="btnCompare" title="按住看原图">按住对比</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="chkGradeExport" checked> 导出时套用</label>
+        <label><input type="checkbox" id="chkGradeVideo"> 参考视频也套用（只是预览）</label>
+      </div>
+
+      <h3>导出（透明 PNG 序列）</h3>
+      <div class="grid">
+        <label>输出宽 <input type="number" id="s_outW" value="1200" step="2"></label>
+        <label>输出高 <input type="number" id="s_outH" value="1000" step="2"></label>
+        <label>角色缩放 <input type="number" id="s_scale" value="1" step="0.05" min="0.1"></label>
+        <label>帧率 <select id="s_fps"><option>24</option><option>25</option><option selected>30</option><option>60</option></select></label>
+        <label>脚底 X <input type="number" id="s_ax" value="720"></label>
+        <label>脚底 Y <input type="number" id="s_ay" value="960"></label>
+        <label>起 s <input type="number" id="exStart" value="0" step="0.1"></label>
+        <label>止 s <input type="number" id="exEnd" value="" step="0.1" placeholder="到结尾"></label>
+        <label>底色 <select id="exBg"><option value="transparent">透明</option><option value="#00ff00">绿幕</option></select></label>
+      </div>
+      <div class="row"><button id="btnExport" class="primary">导出 PNG 序列</button><button id="btnCancel" hidden>取消</button><span id="exProg"></span></div>
+    </div>
+
+    <!-- 关键帧 -->
+    <div class="tab" id="tab-keys">
+      <div class="row">
+        <button id="btnUndo">撤销上一个</button><button id="btnClearEv">清空</button>
+        <button id="btnSaveProj">保存工程</button><label class="file">载入工程 <input type="file" id="fileProj" accept=".json"></label>
+      </div>
+      <div id="evList"></div>
+    </div>
+
+    <!-- 图层 -->
+    <div class="tab" id="tab-layers">
+      <div class="row"><label class="file">载入 PSD <input type="file" id="filePSD" accept=".psd"></label><span id="psdInfo">未加载</span></div>
+      <div id="layerList"></div>
+    </div>
+  </aside>
+</div>
+<audio id="audio"></audio>
+<script src="psd.js"></script>
+<script src="rig.js"></script>
+<script src="dsp.js"></script>
+<script src="lipsync.js"></script>
+<script src="grade.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
