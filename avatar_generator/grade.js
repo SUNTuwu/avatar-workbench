@@ -21,6 +21,19 @@ const FILTERS = {
 };
 const CURVE_CH = [{ v: 'rgb', label: 'RGB', color: '#ddd' }, { v: 'r', label: '红', color: '#ff5a4e' }, { v: 'g', label: '绿', color: '#5fd36a' }, { v: 'b', label: '蓝', color: '#4a8fd9' }];
 
+// 取自 FINAL 截图中角色的不透明色块。坐标按 8 位 sRGB 记录。
+const screenshotGrade = {
+  filter: 'none', amount: 1,
+  curves: {
+    rgb: [[0, 0], [1, 1]],
+    r: [[0,0],[79,76],[107,120],[217,244],[222,243],[247,252],[252,254],[255,255]],
+    g: [[0,0],[75,74],[154,162],[199,222],[202,219],[222,237],[251,254],[255,255]],
+    b: [[0,0],[67,87],[158,176],[185,197],[191,208],[222,239],[245,254],[255,255]],
+  },
+};
+for (const channel of ['r', 'g', 'b'])
+  screenshotGrade.curves[channel] = screenshotGrade.curves[channel].map(pair => pair.map(v => v / 255));
+
 const Grade = {
   filter: 'none', amount: 1,
   curves: null, version: 0, id: 'grade0', active: false,

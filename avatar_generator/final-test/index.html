@@ -19,8 +19,6 @@
       if (!response.ok) throw new Error('工程读取失败');
       const project = await response.json();
       win.loadProject(project);
-      doc.querySelector('#inDur').value = project.duration;
-      doc.querySelector('#inSpan').value = project.duration;
       const clock = doc.querySelector('#timeText');
       function syncCaption() {
         const t = parseFloat(clock.textContent);

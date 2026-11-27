@@ -9,7 +9,7 @@ const RIG = {
   expectedRecords: 75,
   head: 18,                 // 头部底色
   lens: 22,                 // 眼镜镜片白底
-  body: { normal: [4, 5], mirror: 7 },   // 衬衫（双层抖动）/ 镜像版；举手版（6）算一个手势，见 HANDS.raise
+  body: { normal: [4, 5], mirror: 7 },   // 衬衫（双层抖动）/ 镜像版；指后面姿势（6）算一个手势，见 HANDS.raise
   neck: [8, 9],             // 下巴后的毛（双层抖动）
   face: [34, 35],           // 脸部线稿（双层抖动）
   glasses: [36, 37],        // 眼镜 + 刘海线稿（双层抖动）
@@ -18,18 +18,18 @@ const RIG = {
     L: { up: [11, 13], tilt: [15], back: [17] },
     R: { up: [10, 12], tilt: [14], back: [16] },
   },
-  // 眼睛和眼底：眼底 19 配睁眼，20 配星星眼，21 配半睁和各种闭眼；笑眼、>< 不配眼底
+  // eye 是独立眼形，white 是配套的眼底花纹。
   eyes: {
-    normal:  { label: '正常',   eye: [23],     white: 19, blinks: true },
-    worried: { label: '委屈',   eye: [24],     white: 19, blinks: true },
-    angry:   { label: '生气',   eye: [25],     white: 19, blinks: true },
-    sparkle: { label: '星星眼', eye: [26, 27], white: 20, blinks: true },
-    half:    { label: '半睁',   eye: [28],     white: 21, blinks: true },
-    closed:  { label: '闭眼',   eye: [29],     white: 21 },
-    happy:   { label: '笑眼 ^^', eye: [30] },
-    squeeze: { label: '> <',    eye: [31] },
-    cry:     { label: '哭',     eye: [32],     white: 21 },
-    tired:   { label: '眯眼 - -', eye: [33],   white: 21 },
+    normal:   { label: '正常',    eye: [23], white: 19, blinks: true },
+    worried:  { label: '向左看',    eye: [24], white: 19, blinks: true },
+    angry:    { label: '生气',    eye: [25], white: 20, blinks: true },
+    sparkle2: { label: '星星眼2', eye: [27], white: 19, blinks: true },
+    half:     { label: '半睁',    eye: [28], white: 20, blinks: true },
+    closed:   { label: '闭眼',    eye: [29], white: 21 },
+    happy:    { label: '笑眼 ^^', eye: [30], white: 21 },
+    squeeze:  { label: '挤眼',     eye: [31], white: 21 },
+    cry:      { label: '悲',      eye: [32], white: 21 },
+    tired:    { label: '困',      eye: [33], white: 21 },
   },
   mouths: { a: 39, e: 40, drool: 41, wavy: 42, n: 43, bf: 44, o: 45, i: 46, u: 47, panic: 48, shout: 49, pout: 50 },
   whiskers: { normal: [53, 54], bristle: [55, 56] },   // 胡子：平时 / 炸毛，都是双层抖动
@@ -44,32 +44,42 @@ const RIG = {
 const BONES = [
   { id: 'body', label: '身体', parent: null,   pivot: [706, 700], tip: [699, 508] },
   { id: 'head', label: '头',   parent: 'body', pivot: [699, 508], tip: [712, 215] },
-  { id: 'earL', label: '左耳', parent: 'head', pivot: [655, 245], tip: [618, 72] },
-  { id: 'earR', label: '右耳', parent: 'head', pivot: [790, 235], tip: [862, 90] },
+  { id: 'earL', label: '左耳', parent: 'head', pivot: [626, 288], tip: [618, 72] },
+  { id: 'earR', label: '右耳', parent: 'head', pivot: [769, 302], tip: [862, 90] },
 ];
 
 // 手势：side 是占用的手（L 画面左、R 画面右），同一边互斥，双手手势两边都占。
 // pivot 是手腕（缩放框默认锚点、专属动画的旋转中心）。
-// body：'mirror' = 要配身体镜像版；isBody = 这个图层本身就是身体（举手版），clip 是能动的手臂部分
+// body：'mirror' = 要配身体镜像版；isBody = 这个图层本身就是身体（指后面姿势），clip 是能动的手臂部分
 // anims：这个手势专属的动画（0 到多个）
+// parts：手势分成几块分别动（每块一个图层，可以用 clip 只取图层的一部分，pivot 是这块的手腕）；
+//   专属动画里用 partVals(h, 序号) 改某一块，序号按 parts 的顺序
+const THUMB_TOP = 500, THUMB_BOT = 725, THUMB_MID = 658;   // 点赞图层 70 里两只手的分界（中间 561–755 是空的）
 const HANDS = {
-  show:     { label: '展示手', side: ['L'], layer: 59, pivot: [560, 690], anims: ['lift', 'offer'] },
+  show:     { label: '展示手', side: ['L', 'R'], layer: 59, pivot: [560, 690], anims: ['lift', 'offer'] },
   finger:   { label: '竖手指', side: ['L'], layer: 60, pivot: [470, 670], anims: ['wag', 'poke'] },
   pointUp:  { label: '指天',   side: ['L'], layer: 65, pivot: [620, 670], anims: ['jab'] },
   palm:     { label: '请看',   side: ['L'], layer: 68, pivot: [570, 680], anims: ['present', 'jabL'] },
   pointR:   { label: '指右边', side: ['L'], layer: 72, pivot: [520, 700], anims: ['jabR'] },
-  paw:      { label: '爪爪',   side: ['L'], layer: 67, pivot: [560, 680], anims: ['beckon'] },
-  paw2:     { label: '爪爪2',  side: ['L'], layer: 69, pivot: [560, 690], anims: ['beckon'] },
-  raise:    { label: '举手',   side: ['L'], layer: 6,  pivot: [600, 470], isBody: true,
+  paw:      { label: '爪爪1',   side: ['L'], layer: 67, pivot: [560, 680], anims: ['beckon', 'beckonFast'] },
+  paw2:     { label: '爪爪2',  side: ['L'], layer: 69, pivot: [560, 690], anims: ['beckon', 'beckonFast'] },
+  raise:    { label: '指后面',   side: ['L'], layer: 6,  pivot: [600, 470], isBody: true,
               clip: [[420, 160], [940, 160], [940, 356], [420, 531]], anims: ['waveArm'] },
-  think:    { label: '期待手', side: ['R'], layer: 61, pivot: [700, 690], body: 'mirror', anims: ['hope'] },
+  think:    { label: '期待手', side: ['L', 'R'], layer: 61, pivot: [700, 690], body: 'mirror', anims: ['hope'] },
   chin:     { label: '摸下巴', side: ['R'], layer: 73, pivot: [780, 700], body: 'mirror', anims: ['stroke'] },
   pointL:   { label: '指左边', side: ['R'], layer: 71, pivot: [880, 700], anims: ['jabL'] },
-  heart:    { label: '比心手', side: ['L', 'R'], layer: 62, pivot: [625, 710], anims: ['beat', 'swayHeart'] },
+  heart:    { label: '比心手', side: ['L', 'R'], layer: 62, pivot: [625, 710], anims: ['swayHeart'] },
   pray:     { label: '双手合十', side: ['L', 'R'], layer: 64, pivot: [690, 700], anims: ['bow', 'rub'] },
   fold:     { label: '抱臂',   side: ['L', 'R'], layer: 63, pivot: [706, 700], anims: ['huff'] },
   paws:     { label: '双爪',   side: ['L', 'R'], layer: 66, pivot: [700, 700], anims: ['scratch', 'pounce'] },
-  thumbs:   { label: '点赞',   side: ['L', 'R'], layer: 70, pivot: [660, 700], anims: ['thumbUp'] },
+  thumbs:   { label: '点赞',   side: ['L', 'R'], layer: 70, pivot: [660, 700], anims: ['thumbUp', 'cheer'],
+              parts: [
+                { layer: 70, pivot: [500, 690], clip: [[350, THUMB_TOP], [THUMB_MID, THUMB_TOP], [THUMB_MID, THUMB_BOT], [350, THUMB_BOT]] },
+                { layer: 70, pivot: [820, 690], clip: [[THUMB_MID, THUMB_TOP], [975, THUMB_TOP], [975, THUMB_BOT], [THUMB_MID, THUMB_BOT]] },
+              ] },
+  // 对手指：指右边（72）+ 指左边（71）两张拼在一起，指尖在中间碰上
+  pokeTips: { label: '对手指', side: ['L', 'R'], layer: 72, pivot: [700, 700], anims: ['tapTips', 'fidget'],
+              parts: [{ layer: 72, pivot: [520, 700] }, { layer: 71, pivot: [880, 700] }] },
 };
 const HAND_GROUPS = [
   { side: 'L', label: '画面左手' }, { side: 'R', label: '画面右手' }, { side: 'LR', label: '双手' },
@@ -94,17 +104,17 @@ const VISEME_COLORS = { a: '#e8463a', e: '#f08a3c', o: '#e9c13b', i: '#4fb39a', 
 const EXPRESSIONS = {
   normal:     { label: '普通',   key: '1', eyes: 'normal',  ears: 'up',   mouth: 'n' },
   shock:      { label: '震惊',   key: '2', eyes: 'normal',  ears: 'back', mouth: 'a' },
-  sparkle:    { label: '星星眼', key: '3', eyes: 'sparkle', ears: 'up',   mouth: 'o' },
+  sparkle2:   { label: '星星眼2', key: '3', eyes: 'sparkle2', ears: 'up', mouth: 'o' },
   speechless: { label: '无语',   key: '4', eyes: 'half',    ears: 'tilt', mouth: 'bf' },
   smug:       { label: '得意',   key: '5', eyes: 'half',    ears: 'up',   mouth: 'wavy' },
   happy:      { label: '开心',   key: '6', eyes: 'happy',   ears: 'up',   mouth: 'a' },
   calm:       { label: '闭眼',   key: '7', eyes: 'closed',  ears: 'up',   mouth: 'n' },
   panic:      { label: '急急',   key: '8', eyes: 'squeeze', ears: 'back', mouth: 'panic', whiskers: 'bristle', loop: 'tremble' },
-  drool:      { label: '馋',     key: '9', eyes: 'sparkle', ears: 'up',   mouth: 'drool' },
+  drool:      { label: '馋',     key: '9', eyes: 'sparkle2', ears: 'up',   mouth: 'drool' },
   serious:    { label: '认真',   key: '0', eyes: 'normal',  ears: 'up',   mouth: 'bf' },
-  worried:    { label: '委屈',   key: '-', eyes: 'worried', ears: 'tilt', mouth: 'pout' },
+  worried:    { label: '向左看',   key: '-', eyes: 'worried', ears: 'tilt', mouth: 'pout' },
   angry:      { label: '生气',   key: '=', eyes: 'angry',   ears: 'back', mouth: 'wavy', whiskers: 'bristle' },
-  cry:        { label: '哭',     key: '[', eyes: 'cry',     ears: 'back', mouth: 'pout' },
-  tired:      { label: '眯眼',   key: ']', eyes: 'tired',   ears: 'tilt', mouth: 'n' },
+  cry:        { label: '悲',     key: '[', eyes: 'cry',     ears: 'back', mouth: 'pout' },
+  tired:      { label: '困',   key: ']', eyes: 'tired',   ears: 'tilt', mouth: 'n' },
   yell:       { label: '大喊',   key: "'", eyes: 'squeeze', ears: 'back', mouth: 'shout', whiskers: 'bristle' },
 };

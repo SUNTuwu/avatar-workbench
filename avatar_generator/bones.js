@@ -28,7 +28,7 @@ const BONE_PARAMS = [
   { k: 'sx', label: '横缩放', step: 0.01, min: 0.2, max: 3 },
   { k: 'sy', label: '竖缩放', step: 0.01, min: 0.2, max: 3 },
 ];
-const BOX_DEF = { sx: 1, sy: 1, box: 0, anchor: 'wrist' };
+const BOX_DEF = { x: 0, y: 0, sx: 1, sy: 1, box: 0, anchor: 'wrist' };
 const boneById = Object.fromEntries(BONES.map(b => [b.id, b]));
 
 // 轨道：名字 → 按时间排好的关键帧 [{ t, v: {…}, ease }]
@@ -51,8 +51,9 @@ const Tracks = {
     if (!b) return { ...def, ...a.v };
     const e = (EASES[b.ease] || EASES.ease).f((t - a.t) / (b.t - a.t));
     const out = { ...def, ...a.v };
-    for (const c in b.v) {
-      const x = out[c], y = b.v[c];
+    const target = { ...def, ...b.v };
+    for (const c in target) {
+      const x = out[c], y = target[c];
       if (typeof x === 'number' && typeof y === 'number' && c !== 'box') out[c] = x + (y - x) * e;
     }
     return out;
@@ -92,10 +93,12 @@ function newPose() {
 function clonePose(p) {
   const q = { hands: {}, force: p.force, show: p.show };
   for (const b of BONES) q[b.id] = { ...p[b.id] };
-  for (const [k, v] of Object.entries(p.hands)) q.hands[k] = { ...v };
+  for (const [k, v] of Object.entries(p.hands)) q.hands[k] = { ...v, ...(v.parts ? { parts: v.parts.map(x => x && { ...x }) } : {}) };
   return q;
 }
 const handVals = (p, id) => p.hands[id] || (p.hands[id] = { dx: 0, dy: 0, rot: 0, sx: 1, sy: 1 });
+// 手势里某一块（HANDS.<手势>.parts[i]）自己的平移和角度，绕这块的手腕，叠在整个手势的变换上
+const partVals = (h, i) => { const P = h.parts || (h.parts = []); return P[i] || (P[i] = { dx: 0, dy: 0, rot: 0 }); };
 
 // 把轨道值叠到姿势上：平移、角度相加，缩放相乘
 function addBoneVals(dst, v) { dst.x += v.x; dst.y += v.y; dst.rot += v.rot; dst.sx *= v.sx; dst.sy *= v.sy; }

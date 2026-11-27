@@ -21,11 +21,19 @@
       <label class="rec"><input type="checkbox" id="chkRec"> ● 录制按键（Enter）</label>
       <label title="拖骨骼、拖缩放框、改数值时直接在当前时间记关键帧；不勾就是试看"><input type="checkbox" id="chkAutoKey"> ◆ 自动记关键帧</label>
       <label title="新记的骨骼 / 缩放框关键帧用哪种插值">插值 <select id="selEase"></select></label>
+      <label>全局速度 <input type="number" id="s_rhythmBpm" min="30" max="300" step="1" value="120"> BPM</label>
+      <label title="拖动时间轴或记关键帧时吸附到最近的已有关键帧"><input id="chkKeySnap" type="checkbox" checked> 关键帧吸附</label>
       <span id="timeText">0.00 / 20.00 s</span>
-      <label>无音频时长 <input type="number" id="inDur" value="20" min="1" step="1" style="width:56px"> s</label>
-      <label>时间轴可见 <input type="range" id="inSpan" min="3" max="120" value="20"></label>
+      <label>输出起点 <input type="number" id="exStart" value="0" min="0" step="0.1"> s</label>
+      <label>输出终点 <input type="number" id="exEnd" min="0" step="0.1" placeholder="自动"> s</label>
+      <span id="outLength"></span>
+      <input type="hidden" id="inSpan" value="20">
+      <button id="zoomOut" title="缩小时间轴">−</button><button id="zoomIn" title="放大时间轴">＋</button>
+      <button id="fitTime" title="Home：适配输出区间和所有关键帧">适配全部</button>
     </div>
-    <canvas id="timeline"></canvas>
+    <div class="row speed-info"><strong>全局速度</strong><output id="speedReadout"></output><small>点击加点 · 拖动调整 · 右键删点</small><button data-timeline-undo disabled>撤销</button><button id="resetSpeed">恢复 1×</button></div>
+    <canvas id="speedCurve" aria-label="全局动作速度曲线，范围 0.5 至 1.25 倍"></canvas>
+    <canvas id="timeline" tabindex="0" title="纵向滚轮缩放，横向滚轮或中键拖动平移，Home 适配全部，方向键逐帧，空格播放或暂停"></canvas>
     <div id="status">正在初始化…</div>
   </section>
 
@@ -37,6 +45,7 @@
       <button data-tab="bones">骨骼</button>
       <button data-tab="keys">关键帧</button>
       <button data-tab="layers">图层</button>
+      <button data-tab="earLab">临时工作台</button>
     </nav>
 
     <!-- 口型：配音、算法、降噪、麦克风 -->
@@ -85,46 +94,58 @@
       <div class="sub">右耳（画面右）</div><div class="btns" id="g_earR"></div>
       <div class="sub">胡子</div><div class="btns" id="g_whiskers"></div>
       <h3>手势 <small>左右手各选一个，同一边互斥；双手手势两边都占。再点一次放下</small></h3>
-      <div class="sub">画面左手 <small class="dim">举手和衣服在同一张图上，也算左手</small></div><div class="btns handbtns" id="g_handL"></div>
-      <div class="sub">画面右手 <small class="dim">期待手、摸下巴会自动换成身体镜像版</small></div><div class="btns handbtns" id="g_handR"></div>
+      <div class="sub">画面左手 <small class="dim">「指后面」和衣服共用一个图层</small></div><div class="btns handbtns" id="g_handL"></div>
+      <div class="sub">画面右手 <small class="dim">摸下巴会自动换成身体镜像版</small></div><div class="btns handbtns" id="g_handR"></div>
       <div class="sub">双手</div><div class="btns handbtns" id="g_handLR"></div>
-      <div class="row"><button id="btnHandsOff">全部放下</button><button id="btnWasted" title="头顶的 WASTED 字，打开时会砸下来">WASTED 字</button></div>
+      <div class="row"><button id="btnHandsOff">全部放下</button></div>
       <h3>手势专属动画 <small>只列出现在举着的手势的</small></h3>
       <div class="btns" id="g_gact"></div>
-      <h3>缩放框 <small>节目效果：把手势超级拉长 / 压扁。默认全部关闭</small></h3>
+      <h3>缩放框 <small>拖框内移动，拖边或角缩放，Shift 拖角等比</small></h3>
       <div id="boxFields">
         <div class="row">
           <label>手势 <select id="selBoxHand"></select></label>
-          <label title="在预览上显示手柄，拖手柄自由缩放；按住 Shift 等比"><input type="checkbox" id="chkBoxEdit"> 在画面上拖</label>
+          <label title="拖框内移动，拖手柄缩放；按住 Shift 拖角等比"><input type="checkbox" id="chkBoxEdit"> 在画面上拖</label>
         </div>
         <div class="grid">
           <label>横向 <input type="range" data-k="sx" min="-3" max="3" step="0.01"> <input type="number" data-k="sx" step="0.05"></label>
           <label>竖向 <input type="range" data-k="sy" min="-3" max="3" step="0.01"> <input type="number" data-k="sy" step="0.05"></label>
+          <label>位移 X <input type="number" data-k="x" step="1"></label>
+          <label>位移 Y <input type="number" data-k="y" step="1"></label>
           <label>锚点 <select data-k="anchor"><option value="wrist">手腕</option><option value="center">中心</option></select></label>
           <label title="开了以后这个框会画在画面里，跟着动画一起导出"><input type="checkbox" data-k="box"> 显示框（会导出）</label>
         </div>
       </div>
-      <div class="row"><button id="btnBoxKey">◇ 记关键帧</button><button id="btnBoxDelKey">删除当前时间的关键帧</button><button id="btnBoxReset">缩放归 1</button></div>
+      <div class="row"><button id="btnBoxKey">◇ 记关键帧</button><button id="btnBoxDelKey">删除当前时间的关键帧</button><button id="btnBoxReset">缩放归 1</button><button id="btnBoxMoveReset">位移归零</button></div>
       <div id="boxKeyList" class="keylist"></div>
-      <h3>电脑 <small>托在展示手上，跟着展示手动</small></h3>
+      <h3>前景层 <small>画在角色前面</small></h3>
+      <div class="sub">电脑（托在展示手上，跟着展示手动）</div>
       <div class="btns" id="g_laptop"></div>
       <div class="row">
         <label>缩放 <input type="number" id="s_lapScale" value="0.815" step="0.02" min="0.1"></label>
         <label>X <input type="number" id="s_lapX" value="19" step="5"></label>
         <label>Y <input type="number" id="s_lapY" value="62" step="5"></label>
       </div>
+      <h3>背景层 <small>画在角色后面，不跟着身体动</small></h3>
+      <div class="btns"><button id="btnWasted" title="头顶后面的 WASTED 字，打开时会砸下来">WASTED 字</button></div>
       <h3>动作</h3>
       <div class="btns" id="g_act"></div>
       <h3>自动动画</h3>
       <div class="grid">
-        <label>线稿抖动 fps <input type="number" id="s_boilFps" value="8" min="0" max="24"></label>
+        <label>线稿抖动 fps（120 BPM） <input type="number" id="s_boilFps" value="8" min="0" max="24"></label>
         <label>整体微抖 px <input type="number" id="s_jitter" value="0.6" min="0" max="4" step="0.1"></label>
+        <label><input type="checkbox" id="s_rhythm" checked> 律动</label>
+        <label>律动幅度 <input type="number" id="s_rhythmAmount" min="0" max="200" step="1" value="100"> %</label>
         <label><input type="checkbox" id="s_idle" checked> 呼吸 / 轻微晃动</label>
         <label><input type="checkbox" id="s_blink" checked> 自动眨眼</label>
         <label><input type="checkbox" id="s_earTwitch" checked> 耳朵偶尔抖一下</label>
         <label title="根据配音或麦克风音量轻微抬头和左右摆动；不是摄像头追踪。关闭后仍会自动对口型，手动点头等动作也照常生效。"><input type="checkbox" id="s_talkBob" checked> 说话时随音量轻晃头</label>
         <label><input type="checkbox" id="s_startHidden"> 开头隐藏（等「弹入」）</label>
       </div>
+      <details><summary>律动强度关键帧 · 当前 <output id="rhythmStrengthNow">100%</output></summary>
+        <div class="row"><label>相对设定幅度 <input type="number" id="keyRhythmValue" value="100" min="0" max="100"> %</label>
+        <button id="keyRhythm">◆ 在当前时间记录</button></div>
+        <table id="rhythmKeys"></table>
+      </details>
     </div>
 
     <!-- 输出和色彩 -->
@@ -144,6 +165,14 @@
       <canvas id="curveCanvas" width="272" height="272"></canvas>
       <div class="row"><span id="curveInfo" class="dim">点空白处加点，拖动调整；双击、右键或拖出框外删点</span></div>
       <div class="row">
+        <label>本地模板 <select id="gradePreset"></select></label>
+        <button id="btnCustomGrade">套用模板</button><button id="deleteGradePreset">删除模板</button>
+      </div>
+      <div class="row">
+        <input id="gradePresetName" aria-label="新模板名称" placeholder="新模板名称" maxlength="64">
+        <button id="addGradePreset">新增模板</button>
+      </div>
+      <div class="row">
         <button id="btnCurveReset">重置这个通道</button><button id="btnCurveResetAll">重置全部曲线</button>
         <button id="btnCompare" title="按住看原图">按住对比</button>
       </div>
@@ -160,11 +189,9 @@
         <label>帧率 <select id="s_fps"><option>24</option><option>25</option><option selected>30</option><option>60</option></select></label>
         <label>脚底 X <input type="number" id="s_ax" value="720"></label>
         <label>脚底 Y <input type="number" id="s_ay" value="960"></label>
-        <label>起 s <input type="number" id="exStart" value="0" step="0.1"></label>
-        <label>止 s <input type="number" id="exEnd" value="" step="0.1" placeholder="到结尾"></label>
         <label>底色 <select id="exBg"><option value="transparent">透明</option><option value="#00ff00">绿幕</option></select></label>
       </div>
-      <div class="row"><button id="btnExport" class="primary">导出 PNG 序列</button><button id="btnCancel" hidden>取消</button><span id="exProg"></span></div>
+      <div class="row"><button id="btnExport" class="primary">导出 PNG 序列</button><button id="btnCancel" hidden>取消</button><span id="exProg"></span> <a href="gif/" target="_blank" rel="noopener">GIF 导出工具 ↗</a></div>
     </div>
 
     <!-- 骨骼 -->
@@ -187,7 +214,7 @@
     <!-- 关键帧 -->
     <div class="tab" id="tab-keys">
       <div class="row">
-        <button id="btnUndo">撤销上一个</button><button id="btnClearEv">清空</button>
+        <button id="btnUndo" data-timeline-undo disabled>撤销</button><button id="btnClearEv">清空</button>
         <button id="btnSaveProj">保存工程</button><label class="file">载入工程 / 蓝图 <input type="file" id="fileProj" accept=".json"></label>
       </div>
       <details id="bpBox" open>
@@ -209,6 +236,26 @@
     </div>
 
     <!-- 图层 -->
+    <div class="tab" id="tab-earLab">
+      <h3>自动抖耳校准</h3>
+      <div class="row">
+        <label>试看 <select id="earLabSide"><option value="L">画面左耳</option><option value="R">画面右耳</option></select></label>
+        <label>起始耳形 <select id="earLabPose"><option value="up">竖耳</option><option value="tilt">歪耳</option></select></label>
+        <label><input type="checkbox" id="earLabLoop" checked> 循环试看</label>
+        <select id="earLabRate" aria-label="试看速度"><option value="1">原速</option><option value=".5">半速</option><option value=".25">四分之一速</option></select>
+      </div>
+      <label>观察时刻 <input id="earLabTime" type="range" min="-200" max="1200" step="1" value="0"> <output id="earLabReadout"></output></label>
+      <div class="dim">0 ms 是耳形开始切换的时刻。拖动时间条可暂停细看。</div>
+      <h3>自动动画参数</h3>
+      <div class="row"><label>骨骼偏移 <input type="range" id="s_earOffset" min="-200" max="200" value="0"> <output for="s_earOffset">0</output> ms</label></div>
+      <div class="row"><label>骨骼周期 <input type="range" id="s_earBoneMs" min="50" max="800" value="250"> <output for="s_earBoneMs">250</output> ms</label></div>
+      <div class="row"><label>耳形周期 <input type="range" id="s_earPoseMs" min="50" max="800" value="250"> <output for="s_earPoseMs">250</output> ms</label></div>
+      <div class="row"><label>外摆峰值 <input type="range" id="s_earOutDeg" min="0" max="45" value="16"> <output for="s_earOutDeg">16</output> °</label></div>
+      <div class="row"><label>回弹峰值 <input type="range" id="s_earBackDeg" min="0" max="45" value="8"> <output for="s_earBackDeg">8</output> °</label></div>
+      <div class="dim">参数按 120 BPM 标定；周期取最近的 1/8 拍，偏移随速度缩放。负偏移让骨骼先动，正偏移让耳形先换。参数仅调整当前选中的耳朵，保存工程后保留。</div>
+      <button id="earLabReset">恢复当前耳默认参数</button>
+    </div>
+
     <div class="tab" id="tab-layers">
       <div class="row"><label class="file">载入 PSD <input type="file" id="filePSD" accept=".psd"></label><span id="psdInfo">未加载</span></div>
       <div id="layerList"></div>
@@ -223,6 +270,7 @@
 <script src="lipsync.js"></script>
 <script src="grade.js"></script>
 <script src="motion.js"></script>
+<script src="speed.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

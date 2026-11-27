@@ -4,9 +4,11 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 function mulberry32(a) { return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function schedule(seed, min, max, horizon = 4000) { const r = mulberry32(seed), out = []; let t = min * r(); while (t < horizon) { out.push(t); t += min + (max - min) * r(); } return out; }
-function inWindow(starts, t, dur) { let lo = 0, hi = starts.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (starts[m] <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k >= 0 && t - starts[k] < dur; }
-const BLINK_T = schedule(7, 2.2, 5.0);
-const EAR_T = { L: schedule(13, 4, 9), R: schedule(29, 5, 10) };
+function sinceLast(starts, t) { let lo = 0, hi = starts.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (starts[m] <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k < 0 ? Infinity : t - starts[k]; }
+// 随机间隔先按 120 BPM 换算为整拍，再用全局拍钟读取。
+const scheduleBeats = (seed, min, max) => schedule(seed, min, max).map(t => Math.round(t * 2));
+const BLINK_T = scheduleBeats(7, 2.2, 5.0);
+const EAR_T = { L: scheduleBeats(13, 4, 9), R: scheduleBeats(29, 5, 10) };
 
 // ---------- 全局状态 ----------
 const App = {
@@ -15,20 +17,27 @@ const App = {
   // 试看：按键 / 拖骨骼 / 拖缩放框的临时效果，不进导出
   live: { over: [], acts: [], bone: {}, box: {} },
   visemes: null, audioBuf: null, audioName: '',
-  duration: 20, t: 0, playing: false, recording: false,
+  duration: 120, t: 0, playing: false, recording: false,
   wallStart: 0, tStart: 0, pauseWall: performance.now(),
   view0: 0, exporting: false, cancel: false,
   tab: 'pose', selBone: 'head', sel: null, frame: null, drag: null, bps: [],
 };
-const S = {};
-const SETTING_IDS = ['boilFps', 'jitter', 'idle', 'blink', 'earTwitch', 'talkBob', 'startHidden', 'outW', 'outH', 'scale', 'ax', 'ay', 'fps', 'lapScale', 'lapX', 'lapY'];
+const earDefaults = {
+  L: { earOffset: 200, earBoneMs: 250, earPoseMs: 250, earOutDeg: 20, earBackDeg: 0 },
+  R: { earOffset: 100, earBoneMs: 250, earPoseMs: 250, earOutDeg: 20, earBackDeg: 20 },
+};
+const S = { earCalibration: structuredClone(earDefaults) };
+const SETTING_IDS = ['boilFps', 'jitter', 'idle', 'rhythm', 'rhythmAmount', 'rhythmBpm', 'blink', 'earTwitch', 'talkBob', 'startHidden', 'outW', 'outH', 'scale', 'ax', 'ay', 'fps', 'lapScale', 'lapX', 'lapY'];
 function readSettings() {
   for (const k of SETTING_IDS) { const el = $('#s_' + k); S[k] = el.type === 'checkbox' ? el.checked : +el.value; }
+  S.rhythmAmount = clamp(S.rhythmAmount, 0, 200);
+  S.rhythmBpm = clamp(S.rhythmBpm || 120, 30, 300);
   const view = $('#view');
   if (view.width !== S.outW || view.height !== S.outH) { view.width = S.outW; view.height = S.outH; }
 }
 function writeSettings(o) {
   for (const k of SETTING_IDS) { if (!(k in o)) continue; const el = $('#s_' + k); if (el.type === 'checkbox') el.checked = !!o[k]; else el.value = o[k]; }
+  showEarCalibration();
   readSettings();
 }
 
@@ -49,7 +58,9 @@ function handOn(hands, id) {
   for (const side of G.side) hands[side] = id;
 }
 function handOff(hands, id) { for (const side of ['L', 'R']) if (id === 'all' || hands[side] === id) hands[side] = null; }
+const currentEyeId = id => id === 'sparkle' ? 'sparkle2' : id;
 function applyEvent(s, k, v, t) {
+  if (k === 'expr' || k === 'eyes') v = currentEyeId(v);
   switch (k) {
     case 'expr': {
       const x = EXPRESSIONS[v]; if (!x) return;
@@ -83,9 +94,19 @@ function visemeAt(t) {
   const i = Math.floor(t * V.fps);
   return i >= 0 && i < V.labels.length ? { label: V.labels[i], energy: V.energy[i] || 0 } : { label: null, energy: 0 };
 }
+function beatSeconds() { return 60 / S.rhythmBpm; }
+const earCycleMs = ms => Math.max(1, Math.round(ms / 62.5)) * 62.5; // 120 BPM 标尺上的 1/8 拍
+function liveMotionAge(action, now) {
+  const end = action.timelineStart + (now - action.start) / 1000;
+  return SpeedCurve.sample(end).time - SpeedCurve.sample(action.timelineStart).time;
+}
+function actionSeconds(action) { return action.beats * beatSeconds(); }
+function gestureAction(value) {
+  return (value === 'heart:beat' ? 'heart:swayHeart' : String(value)).split(':');
+}
 function actDef(k, v) {
   if (k === 'act') return ACTIONS[v];
-  const an = String(v).split(':')[1]; return HAND_ANIMS[an];
+  const [, an] = gestureAction(v); return HAND_ANIMS[an];
 }
 const boneVals = (id, t, live) => (live && App.live.bone[id]) ? { ...BONE_DEF, ...App.live.bone[id] } : Tracks.eval('bone.' + id, t, BONE_DEF);
 const boxVals = (id, t, live) => (live && App.live.box[id]) ? { ...BOX_DEF, ...App.live.box[id] } : Tracks.eval('hand.' + id, t, BOX_DEF);
@@ -93,31 +114,70 @@ const boxVals = (id, t, live) => (live && App.live.box[id]) ? { ...BOX_DEF, ...A
 // 这一帧的姿势：程序动作 → 手势动画 → 关键帧轨道
 function framePose(t, tIdle, live, now) {
   const { st, acts } = stateAt(t, live);
+  const beats = tIdle / beatSeconds();
   const p = newPose(); p.show = st.visible;
   if (S.idle) {
-    const b = Math.sin(2 * Math.PI * tIdle / 3.4);
-    p.body.sy *= 1 + 0.008 * b; p.head.y += 1.5 * Math.sin(2 * Math.PI * tIdle / 3.4 + 0.6); p.head.rot += 0.8 * Math.sin(2 * Math.PI * tIdle / 6.1);
-    p.earL.rot -= 1.2 * Math.sin(2 * Math.PI * tIdle / 4.3 + 1); p.earR.rot += 1.2 * Math.sin(2 * Math.PI * tIdle / 4.7 + 2);
+    const b = Math.sin(2 * Math.PI * beats / 7);
+    p.body.sy *= 1 + 0.008 * b; p.head.y += 1.5 * Math.sin(2 * Math.PI * beats / 7 + 0.6); p.head.rot += 0.8 * Math.sin(2 * Math.PI * beats / 12);
+    p.earL.rot -= 1.2 * Math.sin(2 * Math.PI * beats / 9 + 1); p.earR.rot += 1.2 * Math.sin(2 * Math.PI * beats / 10 + 2);
   }
-  if (st.loop === 'tremble') { const i = Math.floor(tIdle * 24); p.body.x += noise(i, 11) * 2.5; p.body.y += noise(i, 12) * 1.5; }
+  if (S.rhythm) {
+    const strength = Tracks.eval('rhythm.strength', t, {percent:100}).percent;
+    const amount = S.rhythmAmount / 100 * clamp(strength, 0, 100) / 100;
+    const beat = 2 * Math.PI * beats;
+    p.body.y += 12 * amount * Math.cos(beat);
+    p.head.y += 5 * amount * Math.cos(beat - 0.4);
+    // 每拍上下弹一次，两拍完成一次左右摇摆。
+    p.body.x += 7 * amount * Math.cos(beat / 2);
+    p.body.rot += 4 * amount * Math.cos(beat / 2);
+  }
+  if (st.loop === 'tremble') { const i = Math.floor(beats * 12); p.body.x += noise(i, 11) * 2.5; p.body.y += noise(i, 12) * 1.5; }
 
   const run = [];
-  for (const a of acts) { const D = actDef(a.k, a.v); if (D && t >= a.t && t < a.t + D.dur) run.push({ k: a.k, v: a.v, u: (t - a.t) / D.dur }); }
-  if (live) for (const la of App.live.acts) { const D = actDef(la.k, la.v); if (!D) continue; const u = (now - la.start) / 1000 / D.dur; if (u >= 0 && u < 1) run.push({ k: la.k, v: la.v, u }); }
-  for (const a of run) if (a.k === 'act') { ACTIONS[a.v].fn(p, a.u, tIdle); if (a.v === 'pop' || a.v === 'out') p.show = true; }
+  const motionTime = SpeedCurve.sample(t).time;
+  for (const a of acts) {
+    const def = actDef(a.k, a.v);
+    if (!def) continue;
+    const u = (motionTime - SpeedCurve.sample(a.t).time) / actionSeconds(def);
+    if (u >= 0 && u < 1) run.push({ k: a.k, v: a.v, u, beat: motionTime / beatSeconds() });
+  }
+  if (live) for (const la of App.live.acts) { const D = actDef(la.k, la.v); if (!D) continue; const u = liveMotionAge(la, now) / actionSeconds(D); if (u >= 0 && u < 1) run.push({ k: la.k, v: la.v, u, beat: beats }); }
+  for (const a of run) if (a.k === 'act') { ACTIONS[a.v].fn(p, a.u, tIdle, a.beat); if (a.v === 'pop' || a.v === 'out') p.show = true; }
 
   const hands = { ...st.hands };
   if (p.force) for (const [side, id] of Object.entries(p.force)) { const cur = hands[side]; if (cur && cur !== id) for (const sd of HANDS[cur].side) if (hands[sd] === cur) hands[sd] = null; hands[side] = id; }
   const vis = [...new Set([hands.L, hands.R].filter(Boolean))];
-  for (const a of run) if (a.k === 'gact') { const [g, an] = a.v.split(':'); if (vis.includes(g) && HAND_ANIMS[an]) HAND_ANIMS[an].fn(handVals(p, g), p, a.u, tIdle); }
+  for (const a of run) if (a.k === 'gact') { const [g, an] = gestureAction(a.v); if (vis.includes(g) && HAND_ANIMS[an]) HAND_ANIMS[an].fn(handVals(p, g), p, a.u, tIdle, a.beat); }
 
-  // 耳朵偶尔抖一下：换成歪耳的图，再甩一下
   const ears = { L: st.earL, R: st.earR };
-  if (S.earTwitch) for (const side of ['L', 'R']) if (ears[side] === 'up' && inWindow(EAR_T[side], tIdle, 0.22)) { ears[side] = 'tilt'; p['ear' + side].rot += side === 'L' ? -4 : 4; }
+  const lab = live && App.tab === 'earLab';
+  const labMs = lab ? earLabTime(now) : 0;
+  if (S.earTwitch || lab) for (const side of ['L', 'R']) {
+    if (run.some(a => a.k === 'act' && (a.v === 'earflick' || a.v === 'ear' + side))) continue;
+    const calibration = S.earCalibration[side];
+    if (lab) {
+      if (side !== $('#earLabSide').value) continue;
+      ears[side] = $('#earLabPose').value;
+    }
+    if (ears[side] === 'back') continue;
+    const elapsed = lab ? labMs : 500 * sinceLast(EAR_T[side], beats);
+    // 在偏移后的时钟上查触发点，让负偏移也能在换图之前开始摆动。
+    const boneMs = lab ? labMs - calibration.earOffset : 500 * sinceLast(EAR_T[side], beats - calibration.earOffset / 500);
+    const fold = 0.25, release = 0.6875;
+    const posePhase = elapsed / earCycleMs(calibration.earPoseMs);
+    if (posePhase >= 0 && posePhase < 1) ears[side] = posePhase >= fold && posePhase < release ? 'back' : 'tilt';
+    const phase = boneMs / earCycleMs(calibration.earBoneMs);
+    if (phase < 0 || phase >= 1) continue;
+    let angle;
+    if (phase < fold) angle = calibration.earOutDeg * ease(phase / fold);
+    else if (phase < release) angle = calibration.earOutDeg - (calibration.earOutDeg + calibration.earBackDeg) * ease((phase - fold) / (release - fold));
+    else angle = -calibration.earBackDeg * (1 - ease((phase - release) / (1 - release)));
+    p['ear' + side].rot += side === 'L' ? -angle : angle;
+  }
 
   const vis2 = live && Mic.on && (Mic.taking || !App.playing) ? Mic.cur : visemeAt(t);
   const mouth = st.mouth || vis2.label || st.idleMouth;
-  if (S.talkBob && !st.mouth && vis2.label) { p.head.y -= vis2.energy * 3; p.head.rot += vis2.energy * 1.2 * Math.sin(tIdle * 7); }
+  if (S.talkBob && !st.mouth && vis2.label) { p.head.y -= vis2.energy * 3; p.head.rot += vis2.energy * 1.2 * Math.sin(beats * Math.PI); }
 
   for (const b of BONES) addBoneVals(p[b.id], boneVals(b.id, t, live));
   return { st, p, hands, vis, ears, mouth };
@@ -129,32 +189,127 @@ function boxAnchor(g, anchor) {
   if (anchor !== 'center') return G.pivot;
   const [x, y, w, h] = handRect(g); return [x + w / 2, y + h / 2];
 }
+// 一个图层（可以带 clip 多边形）的包围盒
+function layerRect(layer, clip) {
+  const L = App.layers[layer];
+  if (!clip) return [L.x, L.y, L.w, L.h];
+  const xs = clip.map(p => p[0]), ys = clip.map(p => p[1]);
+  const x0 = Math.max(Math.min(...xs), L.x), y0 = Math.max(Math.min(...ys), L.y), x1 = Math.min(Math.max(...xs), L.x + L.w), y1 = Math.min(Math.max(...ys), L.y + L.h);
+  return [x0, y0, x1 - x0, y1 - y0];
+}
 function handRect(g) {
   const G = HANDS[g];
-  if (G.clip) { const xs = G.clip.map(p => p[0]), ys = G.clip.map(p => p[1]), L = App.layers[G.layer]; const x0 = Math.max(Math.min(...xs), L.x), y0 = Math.max(Math.min(...ys), L.y), x1 = Math.min(Math.max(...xs), L.x + L.w), y1 = Math.min(Math.max(...ys), L.y + L.h); return [x0, y0, x1 - x0, y1 - y0]; }
-  const L = App.layers[G.layer]; return [L.x, L.y, L.w, L.h];
+  if (!G.parts) return layerRect(G.layer, G.clip);
+  const R = G.parts.map(q => layerRect(q.layer, q.clip));
+  const x0 = Math.min(...R.map(r => r[0])), y0 = Math.min(...R.map(r => r[1])), x1 = Math.max(...R.map(r => r[0] + r[2])), y1 = Math.max(...R.map(r => r[1] + r[3]));
+  return [x0, y0, x1 - x0, y1 - y0];
 }
+const handLayers = G => (G.parts ? [...new Set(G.parts.map(q => q.layer))] : [G.layer]);
 function handMatrix(Wbody, g, h, box) {
   const [px, py] = HANDS[g].pivot, [ax, ay] = boxAnchor(g, box.anchor);
-  const nb = Wbody.translate(px + h.dx, py + h.dy).rotate(h.rot).scale(h.sx, h.sy).translate(-px, -py);
+  const nb = Wbody.translate(px + h.dx, py + h.dy).rotate(h.rot).scale(h.sx, h.sy).translate(box.x - px, box.y - py);
   return { nb, M: nb.translate(ax, ay).scale(box.sx, box.sy).translate(-ax, -ay), anchor: [ax, ay] };
+}
+// 在同一动作时钟上重放手势边沿。这样倒拖时间轴、逐帧导出和实时点击都能得到同样的过渡。
+function handTransitions(t, live, now) {
+  const duration = beatSeconds() * 0.32;
+  const changes = [], hands = {L:null,R:null}, preview = [];
+  let waves = 0;
+  const end = t;
+  function waveLength(start, action) {
+    const target = SpeedCurve.sample(start).time + actionSeconds(action);
+    let lo = start, hi = start + actionSeconds(action) / MIN_SPEED;
+    for (let i=0;i<24;i++) {
+      const mid = (lo+hi)/2;
+      if (SpeedCurve.sample(mid).time < target) lo=mid; else hi=mid;
+    }
+    return hi-start;
+  }
+  for (const e of App.events) {
+    if (e.t > t) break;
+    if (e.k === 'hand' || e.k === 'handOff' || (e.k === 'act' && ACTIONS[e.v]?.wave)) {
+      const at = e.t;
+      changes.push({at,k:e.k,v:e.v});
+      if (e.k === 'act') changes.push({at:at+waveLength(at,ACTIONS[e.v]),k:'waveEnd'});
+    }
+  }
+  // 试看手势覆盖时间轴上的手势。记录按下的墙钟时间，使暂停时的按钮也有过渡。
+  if (live) {
+    for (const [k,v,start] of App.live.over) if (k === 'hand' || k === 'handOff') {
+      changes.push({at:end-(now-start)/1000,k,v,preview:true});
+    }
+    for (const a of App.live.acts) if (a.k === 'act' && ACTIONS[a.v]?.wave) {
+      const at=end-(now-a.start)/1000;
+      changes.push({at,k:'act',v:a.v},{at:at+waveLength(a.timelineStart,ACTIONS[a.v]),k:'waveEnd'});
+    }
+  }
+  changes.sort((a,b)=>a.at-b.at);
+  const states = new Map();
+  let previous = new Set();
+  for (let i=0;i<changes.length;) {
+    const at=changes[i].at;
+    if (at>end+1e-9) break;
+    do {
+      const e=changes[i++];
+      if (e.k==='act') waves++;
+      else if (e.k==='waveEnd') waves--;
+      else if (e.preview) preview.push(e);
+      else applyHand(hands,e);
+    } while(i<changes.length && changes[i].at===at);
+    const shown={...hands};
+    for(const e of preview) applyHand(shown,e);
+    if(waves>0) handOn(shown,'paw');
+    const next=new Set([shown.L,shown.R].filter(Boolean));
+    for(const g of new Set([...previous,...next])) {
+      if(previous.has(g)===next.has(g)) continue;
+      const old=states.get(g);
+      const from=old?opacity(old,at):0;
+      states.set(g,{at,from,to:next.has(g)?1:0});
+    }
+    previous=next;
+  }
+  function applyHand(target,e) {
+    if (e.k === 'handOff' || e.v === 'none') handOff(target,e.v==='none'?'all':e.v);
+    else handOn(target,e.v==='laptop'?'show':e.v);
+  }
+  function progress(s,time) {
+    if (!s.to) return clamp((time-s.at)/0.1,0,1);
+    const motionAt = x => x < 0 ? x * SpeedCurve.sample(0).rate : SpeedCurve.sample(x).time;
+    return clamp((motionAt(time)-motionAt(s.at))/duration,0,1);
+  }
+  function opacity(s,time) {
+    const u=progress(s,time);
+    return s.from+(s.to-s.from)*ease(u);
+  }
+  const result={};
+  for(const [g,s] of states){
+    const u=progress(s,end), alpha=opacity(s,end);
+    if(alpha<=0&&!s.to) continue;
+    const bump=Math.sin(Math.PI*u);
+    result[g]={alpha,scale:1-0.045*(1-alpha)+0.035*bump};
+  }
+  return result;
 }
 const hashKey = s => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 997; return h; };
 
 // ---------- 绘制 ----------
 // t：关键帧时间；tIdle：呼吸/眨眼/抖动用的时间（暂停时也继续走，导出时等于 t）
 function drawAvatar(ctx, t, tIdle, live, now) {
+  const clock = SpeedCurve.sample(t);
+  tIdle = clock.time + (tIdle - t) * clock.rate;
   const F = framePose(t, tIdle, live, now);
-  const { st, p, vis } = F;
+  const { st, p } = F;
+  const transitions = handTransitions(t, live, now);
+  const vis = [...new Set([...F.vis,...Object.keys(transitions)])];
   if (!p.show) { if (live) App.frame = null; return st; }
 
-  const tick = Math.floor(tIdle * Math.max(S.boilFps, 1));
+  const tick = Math.floor(tIdle / beatSeconds() * S.boilFps / 2);
   const pick = arr => (arr.length > 1 && S.boilFps > 0 ? arr[tick % arr.length] : arr[0]);
   const [bx, by] = boneById.body.pivot;
   const root = new DOMMatrix().translate(S.ax, S.ay).scale(S.scale).translate(-bx, -by);
   const W = computeSkeleton(root, p);
   const HM = {}, boxes = {};
-  for (const g of vis) { boxes[g] = boxVals(g, t, live); HM[g] = handMatrix(W.body, g, handVals(p, g), boxes[g]); }
+  for (const g of vis) { boxes[g] = boxVals(g, t, live); const h = handVals(p,g), scale = transitions[g]?.scale ?? 1; HM[g] = handMatrix(W.body,g,{...h,sx:h.sx*scale,sy:h.sy*scale},boxes[g]); }
 
   // z：画的先后（默认就是图层序号）；mk：用哪个矩阵；jk：线稿微抖用哪组随机数；clip / inv：只画多边形里面 / 外面
   const list = [];
@@ -166,29 +321,47 @@ function drawAvatar(ctx, t, tIdle, live, now) {
     add(G.layer, 'hand:' + bodyHand, { clip: G.clip, z: G.layer + 0.01, jk: 'body' });
   } else add(vis.some(g => HANDS[g].body === 'mirror') ? RIG.body.mirror : pick(RIG.body.normal), 'body');
   add(pick(RIG.neck), 'head');
-  for (const side of ['L', 'R']) add(pick(RIG.ears[side][F.ears[side]]), 'ear' + side);
+  // 耳朵位于颈毛和头部底色之间；画面右耳始终盖住左耳。
+  add(pick(RIG.ears.L[F.ears.L]), 'earL', { z: 10 });
+  add(pick(RIG.ears.R[F.ears.R]), 'earR', { z: 11 });
   add(RIG.head, 'head');
   let eyes = st.eyes;
-  if (S.blink && RIG.eyes[eyes]?.blinks && inWindow(BLINK_T, tIdle, 0.12)) eyes = 'closed';
+  if (S.blink && RIG.eyes[eyes]?.blinks && sinceLast(BLINK_T, tIdle / beatSeconds()) < 0.25) eyes = 'closed';
   const E = RIG.eyes[eyes] || RIG.eyes.normal;
   add(E.white, 'head'); add(RIG.lens, 'head'); add(pick(E.eye), 'head');
   add(pick(RIG.face), 'head'); add(pick(RIG.glasses), 'head');
   add(RIG.mouths[F.mouth], 'head');
   if (RIG.whiskers[st.whiskers]) add(pick(RIG.whiskers[st.whiskers]), 'head');
-  for (const g of vis) if (!HANDS[g].isBody) add(HANDS[g].layer, 'hand:' + g);
+  for (const g of vis) {
+    if (HANDS[g].isBody) continue;
+    if (HANDS[g].parts) { HANDS[g].parts.forEach((q, i) => add(q.layer, `hand:${g}:${i}`, { clip: q.clip, z: q.layer + i * 0.001, jk: 'hand:' + g })); continue; }
+    let layer = HANDS[g].layer;
+    if (g === 'paw' || g === 'paw2') {
+      const speed = (p.swaySpeed || 0) + (p.hands[g].beckonSpeed || 0);
+      if (Math.abs(speed) > 1e-6) layer = speed > 0 ? HANDS.paw2.layer : HANDS.paw.layer;
+    }
+    add(layer, 'hand:' + g);
+  }
   if (st.laptop !== 'none') {
     const lp = RIG.laptop;
     add(lp.layer, 'laptop', { z: lp.z, img: st.laptop === 'green' ? App.laptopGreen : null });
     if (st.laptop === 'final') add(lp.final, 'laptop', { z: lp.z + 0.1 });
   }
-  if (st.wasted) add(RIG.wasted, 'wasted', { z: 90 });
+  // 背景层：WASTED 画在身体后面，不跟着身体动
+  if (st.wasted) add(RIG.wasted, 'wasted', { z: RIG.wasted });
   list.sort((a, b) => a.z - b.z);
 
   const M = { root, body: W.body, head: W.head, earL: W.earL, earR: W.earR };
-  for (const g of vis) M['hand:' + g] = HM[g].M;
+  for (const g of vis) {
+    M['hand:' + g] = HM[g].M;
+    (HANDS[g].parts || []).forEach((q, i) => {
+      const v = (p.hands[g]?.parts || [])[i] || { dx: 0, dy: 0, rot: 0 }, [px, py] = q.pivot;
+      M[`hand:${g}:${i}`] = HM[g].M.translate(px + v.dx, py + v.dy).rotate(v.rot).translate(-px, -py);
+    });
+  }
   M.laptop = (HM[RIG.laptop.hand] ? HM[RIG.laptop.hand].nb : W.body).translate(S.lapX, S.lapY).scale(S.lapScale);
   {   // WASTED 字：打开的一瞬间从 1.8 倍砸下来
-    const L = App.layers[RIG.wasted], u = st.wastedT >= 0 ? (t - st.wastedT) / 0.35 : 1;
+    const L = App.layers[RIG.wasted], u = st.wastedT >= 0 ? (clock.time - SpeedCurve.sample(st.wastedT).time) / (0.75 * beatSeconds()) : 1;
     const s = u < 1 ? 1.8 - 0.8 * easeOutCubic(Math.max(0, u)) : 1;
     M.wasted = L ? root.translate(L.x + L.w / 2, L.y + L.h / 2).scale(s).translate(-L.x - L.w / 2, -L.y - L.h / 2) : root;
   }
@@ -204,7 +377,8 @@ function drawAvatar(ctx, t, tIdle, live, now) {
     const L = App.layers[it.idx];
     if (!L || !L.canvas || !M[it.mk]) continue;
     ctx.setTransform(jit(it.mk, it.jk));
-    ctx.globalAlpha = L.opacity;
+    const gesture = it.mk.startsWith('hand:') ? it.mk.split(':')[1] : null;
+    ctx.globalAlpha = L.opacity * (transitions[gesture]?.alpha ?? 1);
     if (it.clip) {
       ctx.save(); ctx.beginPath();
       if (it.inv) ctx.rect(L.x - 4, L.y - 4, L.w + 8, L.h + 8);
@@ -217,8 +391,8 @@ function drawAvatar(ctx, t, tIdle, live, now) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   // 缩放框：关键帧里开了「显示框」就画出来，会跟着导出
-  for (const g of vis) if (boxes[g].box) drawTransformBox(ctx, HM[g].M, handRect(g));
-  if (live) App.frame = { W, root, p, HM, boxes, vis, st };
+  for (const g of F.vis) if (boxes[g].box) drawTransformBox(ctx, HM[g].M, handRect(g));
+  if (live) App.frame = { W, root, p, HM, boxes, vis:F.vis, st };
   return st;
 }
 
@@ -260,10 +434,33 @@ function clockTime() {
   if (App.audioBuf && !audio.paused) return audio.currentTime;
   return App.tStart + (performance.now() - App.wallStart) / 1000;
 }
+function outputRange() {
+  const start = Math.max(0, +$('#exStart').value);
+  const end = $('#exEnd').value === '' ? App.duration : +$('#exEnd').value;
+  return { start, end };
+}
+function allKeyTimes() {
+  return [App.events, SpeedCurve.points, ...Object.values(Tracks.data)].flatMap(keys => keys.map(k => k.t));
+}
+function setTimelineView(start, span) {
+  const width = Math.max(0.1, span);
+  $('#inSpan').value = width;
+  App.view0 = Math.max(0, start);
+}
+function fitTimeline() {
+  const end = allKeyTimes().reduce((latest,t) => Math.max(latest,t), Math.max(1,outputRange().end,App.audioBuf?.duration || 0));
+  setTimelineView(0,end*1.04);
+}
+function zoomTimeline(factor, anchor, fraction) {
+  const width = clamp(+$('#inSpan').value*factor,0.1,Math.max(86400,+$('#inSpan').value));
+  setTimelineView(anchor-width*fraction,width);
+}
 function play() {
-  if (App.t >= App.duration - 0.01) App.t = 0;
+  const {start,end} = outputRange();
+  if (!Mic.taking && end <= start) { status('输出终点须晚于起点', true); return; }
+  if (!Mic.taking && (App.t < start || App.t >= end)) App.t = start;
   App.playing = true; App.wallStart = performance.now(); App.tStart = App.t;
-  if (App.audioBuf) { audio.currentTime = App.t; audio.play(); }
+  if (App.audioBuf && App.t < App.audioBuf.duration) { audio.currentTime = App.t; audio.play().catch(() => {}); }
   if (refVideo.src) { refVideo.currentTime = App.t; refVideo.play().catch(() => {}); }
   $('#btnPlay').textContent = '⏸';
 }
@@ -272,8 +469,14 @@ function pause() {
   $('#btnPlay').textContent = '▶';
 }
 function seek(t) {
-  App.t = clamp(t, 0, App.duration);
-  if (App.playing) { App.wallStart = performance.now(); App.tStart = App.t; if (App.audioBuf) audio.currentTime = App.t; }
+  App.t = Math.max(0,t);
+  if (App.playing) {
+    App.wallStart = performance.now(); App.tStart = App.t;
+    if (App.audioBuf) {
+      if (App.t < App.audioBuf.duration) { audio.currentTime = App.t; audio.play().catch(() => {}); }
+      else audio.pause();
+    }
+  }
   if (refVideo.src) refVideo.currentTime = App.t;
 }
 
@@ -287,7 +490,8 @@ let lastUI = 0;
 function frame(now) {
   if (App.playing) {
     App.t = clockTime();
-    if (App.t >= App.duration) { App.t = App.duration; pause(); }
+    const end = outputRange().end;
+    if (!Mic.taking && App.t >= end) { App.t = end; pause(); }
     if (refVideo.src && Math.abs(refVideo.currentTime - App.t) > 0.15) refVideo.currentTime = App.t;
   }
   if (Mic.on) micTick(now);
@@ -308,10 +512,14 @@ function frame(now) {
     if (showBones()) drawBones(ctx);
     if (now - (App.histT || 0) > 400) { App.histT = now; CurveEditor.updateHist(buf); }
   }
+  const range = outputRange();
+  $('#outLength').textContent = range.end > range.start ? '输出 ' + (range.end-range.start).toFixed(2) + ' s' : '输出区间无效';
+  $('#exEnd').placeholder = String(+App.duration.toFixed(2));
   drawTimeline();
-  $('#timeText').textContent = `${App.t.toFixed(2)} / ${App.duration.toFixed(2)} s`;
+  drawSpeedCurve();
+  $('#timeText').textContent = `${App.t.toFixed(2)} / ${outputRange().end.toFixed(2)} s`;
   if (now - lastUI > 120) { lastUI = now; updateButtons(); refreshEditors(); }
-  App.live.acts = App.live.acts.filter(a => { const D = actDef(a.k, a.v); return D && now - a.start < D.dur * 1000; });
+  App.live.acts = App.live.acts.filter(a => { const D = actDef(a.k, a.v); return D && liveMotionAge(a, now) < actionSeconds(D) + (D.wave ? 0.1 * MAX_SPEED : 0); });
   requestAnimationFrame(frame);
 }
 
@@ -339,12 +547,12 @@ function insertEvent(e) {
 function trigger(k, v) {
   if (!App.ready) return;
   if (App.recording) {
-    const e = { t: +App.t.toFixed(3), k, v };
-    insertEvent(e); App.history.push(e);
+    const e = { t: +snapKeyTime(App.t).toFixed(3), k, v };
+    insertEvent(e);
     renderEventList();
   } else {
-    if (k === 'act' || k === 'gact') App.live.acts.push({ k, v, start: performance.now() });
-    if (k !== 'gact' && (k !== 'act' || v === 'pop' || v === 'out')) App.live.over.push([k, v]);
+    if (k === 'act' || k === 'gact') App.live.acts.push({ k, v, start: performance.now(), timelineStart: App.t });
+    if (k !== 'gact' && (k !== 'act' || v === 'pop' || v === 'out')) App.live.over.push([k, v, performance.now()]);
     if (App.live.over.length > 200) App.live.over.splice(0, 100);
     markLive();
   }
@@ -378,7 +586,7 @@ function buildButtons() {
     for (const [id, G] of Object.entries(HANDS)) {
       if (G.side.join('') !== grp.side) continue;
       const b = document.createElement('button'); b.dataset.v = id; b.textContent = G.label;
-      b.title = `图层 ${G.layer}${G.body === 'mirror' ? '，配身体镜像版' : ''}${G.isBody ? '，和衣服在同一图层' : ''}`;
+      b.title = `图层 ${handLayers(G).join(' + ')}${G.body === 'mirror' ? '，配身体镜像版' : ''}${G.isBody ? '，和衣服在同一图层' : ''}`;
       b.onclick = () => { const st = stateAt(App.t, true).st; trigger(st.hands.L === id || st.hands.R === id ? 'handOff' : 'hand', id); };
       box.appendChild(b);
     }
@@ -417,7 +625,25 @@ function updateButtons() {
 const held = new Set();
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea, select') || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.code === 'Space') { e.preventDefault(); App.playing ? pause() : play(); return; }
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) App.playing ? pause() : play(); return; }
+  if (e.key === 'Home') { e.preventDefault(); fitTimeline(); return; }
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+    e.preventDefault(); pause();
+    const r = outputRange();
+    let target;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const right = e.key === 'ArrowRight', fps = S.fps || 30;
+      target = e.shiftKey ? (right ? r.end : r.start) : (Math.round(App.t*fps)+(right?1:-1))/fps;
+    } else {
+      const next = e.key === 'ArrowUp';
+      const times = allKeyTimes().filter(t => next ? t > App.t+1e-6 : t < App.t-1e-6).sort((a,b)=>a-b);
+      target = (next ? times[0] : times.at(-1)) ?? App.t;
+    }
+    seek(target);
+    const width = +$('#inSpan').value;
+    if (App.t < App.view0 || App.t > App.view0+width) setTimelineView(App.t-width/2,width);
+    return;
+  }
   if (e.key === 'Enter') { e.preventDefault(); $('#chkRec').checked = !$('#chkRec').checked; App.recording = $('#chkRec').checked; return; }
   if (e.key.toLowerCase() === 'm' && !e.repeat) { e.preventDefault(); Mic.on ? micStop() : micStart(); return; }
   if (e.key === '\\') { e.preventDefault(); setCompare(true); return; }
@@ -435,14 +661,14 @@ document.addEventListener('keyup', e => {
 
 // ---------- 骨骼 / 缩放框的编辑 ----------
 function setBone(id, v) {
-  if (autoKeyOn()) { Tracks.setKey('bone.' + id, App.t, v, curEase()); delete App.live.bone[id]; onTracksChanged(); }
+  if (autoKeyOn()) { Tracks.setKey('bone.' + id, snapKeyTime(App.t), v, curEase()); delete App.live.bone[id]; onTracksChanged(); }
   else { App.live.bone[id] = { ...v }; markLive(); }
 }
 function setBox(id, v) {
-  if (autoKeyOn()) { Tracks.setKey('hand.' + id, App.t, v, curEase()); delete App.live.box[id]; onTracksChanged(); }
+  if (autoKeyOn()) { Tracks.setKey('hand.' + id, snapKeyTime(App.t), v, curEase()); delete App.live.box[id]; onTracksChanged(); }
   else { App.live.box[id] = { ...v }; markLive(); }
 }
-function keyNow(name, v) { Tracks.setKey(name, App.t, v, curEase()); onTracksChanged(); }
+function keyNow(name, v) { Tracks.setKey(name, snapKeyTime(App.t), v, curEase()); onTracksChanged(); }
 
 function buildBoneUI() {
   const box = $('#g_bones');
@@ -464,8 +690,13 @@ function buildBoneUI() {
 }
 function buildBoxUI() {
   const sync = e => {
+    $('#rhythmStrengthNow').value = Math.round(Tracks.eval('rhythm.strength',App.t,{percent:100}).percent)+'%';
     const id = $('#selBoxHand').value, v = boxVals(id, App.t, true), k = e.target.dataset.k;
     if (k === 'sx' || k === 'sy') v[k] = e.target.type === 'range' ? +Math.pow(2, +e.target.value).toFixed(3) : +e.target.value;
+    else if (k === 'x' || k === 'y') {
+      if (!Number.isFinite(e.target.valueAsNumber)) return;
+      v[k] = e.target.valueAsNumber;
+    }
     else if (k === 'box') v.box = e.target.checked ? 1 : 0;
     else if (k === 'anchor') v.anchor = e.target.value;
     setBox(id, v); refreshEditors(true, e.target);
@@ -474,6 +705,7 @@ function buildBoxUI() {
   $('#selBoxHand').onchange = () => { renderBoxKeys(); refreshEditors(true); };
   $('#btnBoxKey').onclick = () => { const id = $('#selBoxHand').value; keyNow('hand.' + id, boxVals(id, App.t, true)); delete App.live.box[id]; markLive(); };
   $('#btnBoxDelKey').onclick = () => { if (Tracks.removeKeyAt('hand.' + $('#selBoxHand').value, App.t)) onTracksChanged(); else status('当前时间没有这个手势的缩放框关键帧', true); };
+  $('#btnBoxMoveReset').onclick = () => { const id = $('#selBoxHand').value; setBox(id, { ...boxVals(id, App.t, true), x: 0, y: 0 }); refreshEditors(true); };
   $('#btnBoxReset').onclick = () => { const id = $('#selBoxHand').value; setBox(id, { ...boxVals(id, App.t, true), sx: 1, sy: 1 }); };
 }
 // 面板上的数值跟着时间 / 拖动刷新（正在输入的那个框不动）
@@ -487,6 +719,7 @@ function refreshEditors(force, skip) {
     $('#btnBoneKey').textContent = hasKey ? '◆ 更新关键帧' : '◇ 记关键帧';
   }
   if (App.tab === 'pose' || force) {
+    $('#rhythmStrengthNow').value = Math.round(Tracks.eval('rhythm.strength',App.t,{percent:100}).percent)+'%';
     const id = $('#selBoxHand').value, v = boxVals(id, App.t, true);
     for (const el of document.querySelectorAll('#boxFields [data-k]')) {
       if (el === skip || el === document.activeElement) continue;
@@ -509,7 +742,7 @@ function keyRow(name, k, i, summary) {
   return tr;
 }
 const fmtBone = v => `角${(+v.rot).toFixed(1)}° 移${(+v.x).toFixed(0)},${(+v.y).toFixed(0)} 缩${(+v.sx).toFixed(2)}×${(+v.sy).toFixed(2)}`;
-const fmtBox = v => `${(+v.sx).toFixed(2)}×${(+v.sy).toFixed(2)}${v.box ? ' 显示框' : ''}${v.anchor === 'center' ? ' 中心' : ''}`;
+const fmtBox = v => `(${v.x.toFixed(1)}, ${v.y.toFixed(1)}) · ${(+v.sx).toFixed(2)}×${(+v.sy).toFixed(2)}${v.box ? ' 显示框' : ''}${v.anchor === 'center' ? ' 中心' : ''}`;
 function renderBoneKeys() {
   const name = 'bone.' + App.selBone, K = Tracks.keys(name), box = $('#boneKeyList');
   if (!K.length) { box.innerHTML = '<span class="dim">还没有关键帧</span>'; return; }
@@ -520,7 +753,12 @@ function renderBoxKeys() {
   if (!K.length) { box.innerHTML = '<span class="dim">这个手势还没有缩放框关键帧（默认 1×1、不显示框）</span>'; return; }
   const tb = document.createElement('table'); K.forEach((k, i) => tb.appendChild(keyRow(name, k, i, fmtBox({ ...BOX_DEF, ...k.v })))); box.replaceChildren(tb);
 }
-function onTracksChanged() { renderBoneKeys(); renderBoxKeys(); refreshEditors(true); }
+function renderRhythmKeys() {
+  const table = $('#rhythmKeys');
+  table.replaceChildren();
+  Tracks.keys('rhythm.strength').forEach((k,i) => table.appendChild(keyRow('rhythm.strength',k,i,k.v.percent+'%')));
+}
+function onTracksChanged() { renderRhythmKeys(); recordTimelineEdit(); renderBoneKeys(); renderBoxKeys(); refreshEditors(true); }
 
 // 在预览上拖：缩放框手柄 / 骨骼末端（转动，IK）/ 按住 Shift 拖关节（平移）
 function viewPt(e) { const v = $('#view'), r = v.getBoundingClientRect(); return { x: (e.clientX - r.left) * v.width / r.width, y: (e.clientY - r.top) * v.height / r.height }; }
@@ -534,9 +772,13 @@ function bindViewDrag() {
     if ($('#chkBoxEdit').checked && F.vis.includes(bh)) {
       const r = handRect(bh), P = boxHandles(F.HM[bh].M, r);
       const hi = P.findIndex(p => near(p, q, tol));
-      if (hi >= 0) {
-        const [x, y, w, h] = r, c0 = [[x, y], [x + w / 2, y], [x + w, y], [x + w, y + h / 2], [x + w, y + h], [x + w / 2, y + h], [x, y + h], [x, y + h / 2]][hi];
-        App.drag = { type: 'box', g: bh, hi, c0, nb: F.HM[bh].nb, anchor: F.HM[bh].anchor, base: boxVals(bh, App.t, true) };
+      const inv = F.HM[bh].nb.inverse(), start = inv.transformPoint(q);
+      const local = F.HM[bh].M.inverse().transformPoint(q);
+      const [x, y, w, h] = r;
+      const inside = local.x >= x && local.x <= x+w && local.y >= y && local.y <= y+h;
+      if (hi >= 0 || inside) {
+        const c0 = [[x, y], [x + w / 2, y], [x + w, y], [x + w, y + h / 2], [x + w, y + h], [x + w / 2, y + h], [x, y + h], [x, y + h / 2]][hi];
+        App.drag = { type: 'box', g: bh, hi, c0, inv, start, anchor: F.HM[bh].anchor, base: boxVals(bh, App.t, true) };
         view.setPointerCapture(e.pointerId); e.preventDefault(); return;
       }
     }
@@ -560,13 +802,21 @@ function bindViewDrag() {
     const D = App.drag; if (!D) return;
     const q = viewPt(e);
     if (D.type === 'box') {
-      const inv = D.nb.inverse(), l = inv.transformPoint(new DOMPoint(q.x, q.y)), [ax, ay] = D.anchor, [cx, cy] = D.c0;
+      const local = D.inv.transformPoint(q);
+      const dx = local.x - D.start.x, dy = local.y - D.start.y;
+      if (D.hi < 0) {
+        setBox(D.g, { ...D.base, x: +(D.base.x + dx).toFixed(2), y: +(D.base.y + dy).toFixed(2) });
+        return;
+      }
+      const [ax, ay] = D.anchor, [cx, cy] = D.c0;
       const v = { ...D.base };
       const fx = [0, 2, 3, 4, 6, 7].includes(D.hi) && Math.abs(cx - ax) > 2, fy = [0, 1, 2, 4, 5, 6].includes(D.hi) && Math.abs(cy - ay) > 2;
       const lim = s => Math.sign(s || 1) * clamp(Math.abs(s), 0.05, 12);
-      if (fx) v.sx = lim((l.x - ax) / (cx - ax));
-      if (fy) v.sy = lim((l.y - ay) / (cy - ay));
-      if (e.shiftKey && fx && fy) { const s = Math.abs(v.sx - 1) > Math.abs(v.sy - 1) ? v.sx : v.sy; v.sx = v.sy = s; }
+      if (fx) v.sx = lim(D.base.sx + dx / (cx - ax));
+      if (fy) v.sy = lim(D.base.sy + dy / (cy - ay));
+      if (e.shiftKey && fx && fy) { const rx = v.sx / D.base.sx, ry = v.sy / D.base.sy;
+        const ratio = Math.abs(rx - 1) > Math.abs(ry - 1) ? rx : ry;
+        v.sx = lim(D.base.sx * ratio); v.sy = lim(D.base.sy * ratio); }
       v.sx = +v.sx.toFixed(3); v.sy = +v.sy.toFixed(3);
       setBox(D.g, v);
     } else if (D.type === 'ik') {
@@ -587,16 +837,16 @@ const handName = id => (id === 'all' ? '全部' : HANDS[id]?.label || id);
 function evLabel(e) {
   const find = (arr, v) => (arr.find(x => x.v === v) || {}).label || v;
   switch (e.k) {
-    case 'expr': return EXPRESSIONS[e.v]?.label || e.v;
+    case 'expr': return EXPRESSIONS[currentEyeId(e.v)]?.label || e.v;
     case 'mouth': return e.v === null ? '嘴:自动' : '嘴:' + find(MOUTHS, e.v);
-    case 'eyes': return '眼:' + find(EYES, e.v);
+    case 'eyes': return '眼:' + find(EYES, currentEyeId(e.v));
     case 'ears': return '耳:' + find(EAR_POSES, e.v);
     case 'earL': return '左耳:' + find(EAR_POSES, e.v);
     case 'earR': return '右耳:' + find(EAR_POSES, e.v);
     case 'whiskers': return '胡子:' + find(WHISKERS, e.v);
     case 'hand': return e.v === 'none' ? '手:全放下' : e.v === 'laptop' ? '手:展示+电脑(旧)' : '手:' + handName(e.v);
     case 'handOff': return '放下:' + handName(e.v);
-    case 'gact': { const [g, an] = String(e.v).split(':'); return `${handName(g)}·${HAND_ANIMS[an]?.label || an}`; }
+    case 'gact': { const [g, an] = gestureAction(e.v); return `${handName(g)}·${HAND_ANIMS[an]?.label || an}`; }
     case 'final': return 'FINAL ' + (e.v ? '开' : '关');
     case 'body': return '身体(旧，已忽略)';
     case 'laptop': return '电脑:' + find(LAPTOP, e.v);
@@ -605,7 +855,7 @@ function evLabel(e) {
   }
   return e.k;
 }
-const trackLabel = n => { const [type, id] = n.split('.'); return type === 'bone' ? '骨骼·' + (boneById[id]?.label || id) : '缩放框·' + handName(id); };
+const trackLabel = n => { if(n==='rhythm.strength') return '律动强度'; const [type, id] = n.split('.'); return type === 'bone' ? '骨骼·' + (boneById[id]?.label || id) : '缩放框·' + handName(id); };
 function drawTimeline() {
   const cv = $('#timeline'), dpr = window.devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -613,20 +863,23 @@ function drawTimeline() {
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const span = Math.min(+$('#inSpan').value, App.duration);
-  if (!tlDrag && (App.t < App.view0 || App.t > App.view0 + span * 0.85)) App.view0 = clamp(App.t - span * 0.2, 0, Math.max(0, App.duration - span));
-  if (App.view0 + span > App.duration) App.view0 = Math.max(0, App.duration - span);
+  const span = +$('#inSpan').value;
+  if (App.playing && !tlDrag && (App.t < App.view0 || App.t > App.view0+span)) App.view0 = Math.max(0,App.t-span*0.15);
   const t0 = App.view0, X = t => (t - t0) / span * W;
   App.tlView = { t0, span, W };
 
+  const range = outputRange();
+  ctx.fillStyle = '#101216'; ctx.fillRect(0,0,clamp(X(range.start),0,W),H);
+  const right = clamp(X(range.end),0,W); ctx.fillRect(right,0,W-right,H);
+  ctx.fillStyle = '#70cfb8'; ctx.fillRect(X(range.start),0,2,H); ctx.fillRect(X(range.end)-1,0,2,H);
   if (App.sel) {
     const a = X(Math.min(App.sel.t0, App.sel.t1)), b = X(Math.max(App.sel.t0, App.sel.t1));
     ctx.fillStyle = 'rgba(95,179,154,.18)'; ctx.fillRect(a, 0, b - a, H);
     ctx.fillStyle = '#5fb39a'; ctx.fillRect(a, 0, 1, H); ctx.fillRect(b - 1, 0, 1, H);
   }
   ctx.font = '10px sans-serif'; ctx.fillStyle = '#666'; ctx.strokeStyle = '#2b2f36';
-  const step = span > 40 ? 5 : span > 12 ? 1 : 0.5;
-  for (let s = Math.ceil(t0 / step) * step; s <= t0 + span; s += step) { const x = X(s); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(s.toFixed(step < 1 ? 1 : 0), x + 2, 10); }
+  const step = 2 ** Math.ceil(Math.log2(Math.max(0.001, span * 55 / Math.max(W,1))));
+  for (let s = Math.ceil(t0 / step) * step; s <= t0 + span; s += step) { const x = X(s); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); ctx.fillText(s.toFixed(Math.max(0,Math.ceil(-Math.log10(step)))), x + 2, 10); }
 
   const V = App.visemes;
   if (V) {
@@ -657,12 +910,54 @@ function drawTimeline() {
   ctx.fillStyle = '#ff5a4e'; ctx.fillRect(X(App.t) - 1, 0, 2, H);
 }
 let tlDrag = null;
-const tlTime = e => { const r = $('#timeline').getBoundingClientRect(), v = App.tlView; return v ? clamp(v.t0 + (e.clientX - r.left) / v.W * v.span, 0, App.duration) : 0; };
+function snapKeyTime(t, exclude = null) {
+  const view = App.tlView;
+  if (!$('#chkKeySnap').checked || !view?.W) return t;
+  // 按屏幕距离吸附，长时间轴也只捕捉相邻的 0.1 秒。
+  let nearest = t, distance = Math.min(0.1, 7 * view.span / view.W);
+  for (const keys of [App.events, SpeedCurve.points, ...Object.values(Tracks.data)]) {
+    for (const key of keys) {
+      if (key === exclude) continue;
+      const delta = Math.abs(key.t - t);
+      if (delta <= distance && key.t >= 0) {
+        nearest = key.t;
+        distance = delta;
+      }
+    }
+  }
+  return nearest;
+}
+const tlTime = e => {
+  const r = $('#timeline').getBoundingClientRect(), v = App.tlView;
+  return v ? snapKeyTime(Math.max(0, v.t0 + (e.clientX - r.left) / r.width * v.span)) : 0;
+};
+let panStart;
+$('#timeline').addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = e.currentTarget.getBoundingClientRect();
+  if (!rect.width || (!e.deltaX && !e.deltaY)) return;
+  const span = +$('#inSpan').value;
+  const horizontal = Math.abs(e.deltaX) >= Math.abs(e.deltaY);
+  if (horizontal || e.shiftKey) {
+    const delta = horizontal ? e.deltaX : e.deltaY;
+    const pixelsPerUnit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rect.width : 1;
+    setTimelineView(App.view0 + delta * pixelsPerUnit / rect.width * span, span);
+    return;
+  }
+  const f = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+  zoomTimeline(e.deltaY < 0 ? 0.8 : 1.25, App.view0 + span * f, f);
+}, { passive:false });
 $('#timeline').addEventListener('pointerdown', e => {
+  if (e.button === 1) {
+    e.preventDefault(); tlDrag='pan'; panStart={x:e.clientX,t:App.view0};
+    e.currentTarget.setPointerCapture(e.pointerId); return;
+  }
+  if (e.button !== 0) return;
   if (e.shiftKey) { const t = tlTime(e); tlDrag = 'sel'; App.sel = { t0: t, t1: t }; }
   else { tlDrag = 'seek'; seek(tlTime(e)); }
 });
 window.addEventListener('pointermove', e => {
+  if (tlDrag === 'pan') App.view0 = Math.max(0,panStart.t+(panStart.x-e.clientX)*App.tlView.span/App.tlView.W);
   if (tlDrag === 'seek') seek(tlTime(e));
   else if (tlDrag === 'sel') { App.sel.t1 = tlTime(e); syncSelInputs(); }
 });
@@ -672,8 +967,53 @@ window.addEventListener('pointerup', () => {
   tlDrag = null;
 });
 
+// 离散关键帧、插值轨道和速度曲线共享最近十次时间轴编辑。
+let lastTimelineState = null, timelineDragPointer = null;
+function recordTimelineEdit() {
+  if (timelineDragPointer !== null) return;
+  const state = JSON.stringify({ events: App.events, tracks: Tracks.data, curve: SpeedCurve.points });
+  if (state !== lastTimelineState && lastTimelineState !== null) {
+    App.history.push(lastTimelineState);
+    if (App.history.length > 10) App.history.shift();
+  }
+  lastTimelineState = state;
+  for (const b of document.querySelectorAll('[data-timeline-undo]')) {
+    b.disabled = !App.history.length;
+    b.title = '撤销时间轴编辑（Ctrl+Z / ⌘Z），可撤销 ' + App.history.length + ' 步';
+  }
+}
+function undoTimelineEdit() {
+  if (timelineDragPointer !== null || !App.history.length) return;
+  lastTimelineState = App.history.pop();
+  const state = JSON.parse(lastTimelineState);
+  App.events = state.events;
+  Tracks.data = state.tracks;
+  SpeedCurve.load(state.curve);
+  renderEventList(); onTracksChanged();
+}
+function bindTimelineUndo() {
+  for (const b of document.querySelectorAll('[data-timeline-undo]')) b.onclick = undoTimelineEdit;
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+    if (e.target.isContentEditable || e.target.matches?.('textarea,input:not([type]),input[type=text],input[type=number]')) return;
+    e.preventDefault();
+    if (!e.repeat) undoTimelineEdit();
+  });
+  document.addEventListener('pointerdown', e => {
+    if (e.button === 0 && e.target.matches('#view,#boneFields input[type=range],#boxFields input[type=range]'))
+      timelineDragPointer = e.pointerId;
+  }, true);
+  const finish = e => {
+    if (timelineDragPointer !== e.pointerId) return;
+    timelineDragPointer = null; recordTimelineEdit();
+  };
+  window.addEventListener('pointerup', finish);
+  window.addEventListener('pointercancel', finish);
+}
+
 // ---------- 关键帧列表 ----------
 function renderEventList() {
+  recordTimelineEdit();
   const box = $('#evList');
   if (!App.events.length) { box.textContent = '还没有关键帧。勾上「录制按键」后播放并按按钮，或者暂停在某个时间点再按。'; return; }
   const tb = document.createElement('table');
@@ -712,7 +1052,7 @@ function makeBlueprint(t0, t1, name) {
   const events = App.events.filter(e => e.t >= t0 && e.t < t1).map(e => ({ t: +(e.t - t0).toFixed(3), k: e.k, v: e.v }));
   const tracks = {};
   for (const n of Object.keys(Tracks.data)) {
-    const def = n.startsWith('bone.') ? BONE_DEF : BOX_DEF, v0 = Tracks.eval(n, t0, def);
+    const def = n === 'rhythm.strength' ? {percent:100} : n.startsWith('bone.') ? BONE_DEF : BOX_DEF, v0 = Tracks.eval(n, t0, def);
     const inside = Tracks.keys(n).filter(k => k.t >= t0 && k.t <= t1).map(k => ({ t: +(k.t - t0).toFixed(3), v: { ...k.v }, ease: k.ease }));
     const changed = JSON.stringify(v0) !== JSON.stringify(def);
     if (!inside.length && !changed) continue;
@@ -721,7 +1061,7 @@ function makeBlueprint(t0, t1, name) {
     tracks[n] = inside;
   }
   const lines = [...events.map(e => ({ t: e.t, s: evLabel(e) })),
-    ...Object.entries(tracks).flatMap(([n, K]) => K.map(k => ({ t: k.t, s: `${trackLabel(n)}：${n.startsWith('bone.') ? fmtBone({ ...BONE_DEF, ...k.v }) : fmtBox({ ...BOX_DEF, ...k.v })}（${EASES[k.ease]?.label || k.ease}）` })))]
+    ...Object.entries(tracks).flatMap(([n, K]) => K.map(k => ({ t: k.t, s: `${trackLabel(n)}：${n === 'rhythm.strength' ? k.v.percent+'%' : n.startsWith('bone.') ? fmtBone({ ...BONE_DEF, ...k.v }) : fmtBox({ ...BOX_DEF, ...k.v })}（${EASES[k.ease]?.label || k.ease}）` })))]
     .sort((a, b) => a.t - b.t).map(l => `${l.t.toFixed(2)}s  ${l.s}`);
   return {
     type: 'avatar_blueprint', version: 1, name: name || `片段 ${t0.toFixed(1)}–${t1.toFixed(1)}s`, duration: dur,
@@ -736,7 +1076,7 @@ function deployBlueprint(bp, T, { clear, withState }) {
   if (withState && bp.startState) for (const e of snapshotEvents(bp.startState)) insertEvent({ t: +T.toFixed(3), ...e });
   for (const e of bp.events || []) insertEvent({ t: +(T + e.t).toFixed(3), k: e.k, v: e.v });
   for (const [n, K] of Object.entries(bp.tracks || {})) for (const k of K) Tracks.setKey(n, T + k.t, k.v, k.ease);
-  if (t1 > App.duration && !App.audioBuf) { App.duration = Math.ceil(t1); $('#inDur').value = App.duration; }
+  if (t1 > App.duration && !App.audioBuf && !$('#exEnd').value) App.duration = Math.ceil(t1);
   renderEventList(); onTracksChanged();
   App.sel = { t0: T, t1 }; syncSelInputs();
   status(`已部署「${bp.name}」到 ${T.toFixed(2)}–${t1.toFixed(2)}s：${(bp.events || []).length} 个关键帧，${Object.keys(bp.tracks || {}).length} 条骨骼 / 缩放框轨道`);
@@ -885,7 +1225,7 @@ function buildLayerList() {
   for (const [k, e] of Object.entries(RIG.eyes)) { e.eye.forEach(i => put(i, '眼睛:' + e.label + (e.eye.length > 1 ? '(抖动)' : ''))); put(e.white, '眼底:' + e.label); }
   for (const [k, i] of Object.entries(RIG.mouths)) put(i, '嘴:' + (MOUTHS.find(m => m.v === k) || {}).label);
   for (const [k, a] of Object.entries(RIG.whiskers)) a.forEach(i => put(i, '胡子:' + (WHISKERS.find(f => f.v === k) || {}).label + (a.length > 1 ? '(抖动)' : '')));
-  for (const [k, G] of Object.entries(HANDS)) put(G.layer, `手势(${G.side.map(s => (s === 'L' ? '左' : '右')).join('')}):${G.label}${G.isBody ? '（含衣服）' : ''}`);
+  for (const [k, G] of Object.entries(HANDS)) for (const l of handLayers(G)) put(l, `手势(${G.side.map(s => (s === 'L' ? '左' : '右')).join('')}):${G.label}${G.isBody ? '（含衣服）' : ''}`);
   const box = $('#layerList'); box.replaceChildren();
   for (let i = App.layers.length - 1; i >= 0; i--) {
     const L = App.layers[i];
@@ -904,23 +1244,35 @@ function buildLayerList() {
 function projectJSON() {
   return JSON.stringify({
     app: 'avatar_generator', version: 2, psd: PSD_FILE, audio: App.audioName, duration: App.duration,
-    settings: { ...S }, grade: Grade.toJSON(), events: App.events, tracks: Tracks.toJSON(),
+    outputRange: { start: outputRange().start, end: $('#exEnd').value === '' ? null : outputRange().end }, settings: { ...S }, speedCurve: SpeedCurve.points, grade: Grade.toJSON(), events: App.events, tracks: Tracks.toJSON(),
     visemes: App.visemes ? LipSync.encode(App.visemes) : null,
   }, null, 1);
 }
 function loadProject(o) {
+  lastTimelineState = null; App.history.length = 0;
+  SpeedCurve.load(o.speedCurve);
   const s = o.settings ? { ...o.settings } : null;
   // 旧版 PSD（812 宽）的工程：电脑图层换了大小和位置，换算到新 PSD 上同一个位置
   if (s && !(o.version >= 2) && 'lapScale' in s) {
     const so = +s.lapScale;
     s.lapScale = +(so * 1.254).toFixed(3); s.lapX = Math.round(+s.lapX + so * 43.1 + 219); s.lapY = Math.round(+s.lapY - so * 58.3);
   }
-  if (s) writeSettings(s);
+  for (const side of ['L', 'R']) {
+    for (const [key, fallback] of Object.entries(earDefaults[side])) {
+      const input = $('#s_' + key);
+      const value = s?.earCalibration?.[side]?.[key] ?? s?.[key];
+      S.earCalibration[side][key] = Number.isFinite(value) ? clamp(value, +input.min, +input.max) : fallback;
+    }
+  }
+  writeSettings({ rhythm: true, rhythmAmount: 100, rhythmBpm: 120, ...s });
   if (o.grade) Grade.load(o.grade);
   App.events = (o.events || []).slice().sort((a, b) => a.t - b.t);
   Tracks.load(o.tracks);
   if (o.visemes) App.visemes = LipSync.decode(o.visemes);
-  if (!App.audioBuf && o.duration) App.duration = o.duration;
+  if (o.duration > 0) App.duration = o.duration;
+  $('#exStart').value = o.outputRange?.start ?? 0;
+  $('#exEnd').value = o.outputRange?.end ?? '';
+  pause(); seek(outputRange().start); fitTimeline();
   renderEventList(); onTracksChanged();
   status(`工程已载入：${App.events.length} 个关键帧，${Object.keys(Tracks.data).length} 条骨骼 / 缩放框轨道` + (o.audio && o.audio !== App.audioName ? `。记得载入配音 ${o.audio} 听效果` : ''));
 }
@@ -955,8 +1307,8 @@ function movScript(fps) {
 async function exportFrames() {
   if (!App.ready) return;
   readSettings();
-  const fps = S.fps, t0 = Math.max(0, +$('#exStart').value || 0);
-  const t1 = $('#exEnd').value === '' ? App.duration : Math.min(App.duration, +$('#exEnd').value);
+  const fps = S.fps, {start:t0,end:t1} = outputRange();
+  if (t1 <= t0) { status('输出终点须晚于起点',true); return; }
   const n = Math.max(1, Math.round((t1 - t0) * fps));
   let dir = null, zip = null;
   if (window.showDirectoryPicker) {
@@ -1063,7 +1415,7 @@ function micTick(now) {
 async function takeStart() {
   if (!Mic.on && !(await micStart())) return;
   if (typeof MediaRecorder === 'undefined') { status('这个浏览器不支持录音，请用 Edge 或 Chrome', true); return; }
-  if (App.events.length && confirm('新录一段：要清空现有的关键帧吗？\n（取消 = 保留）')) { App.events = []; App.history = []; renderEventList(); }
+  if (App.events.length && confirm('新录一段：要清空现有的关键帧吗？\n（取消 = 保留）')) { App.events = []; renderEventList(); }
   pause();
   audio.removeAttribute('src'); audio.load();
   Object.assign(App, { audioBuf: null, visemes: null, audioName: '', voiceWav: null, raw: null, denoised: false });
@@ -1094,7 +1446,7 @@ async function takeFinish() {
     const name = `mic_take_${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.wav`;
     await loadAudio(new File([encodeWAV(ab)], name, { type: 'audio/wav' }), true);
     seek(0);
-  } catch (err) { status('录音处理失败：' + err.message, true); console.error(err); App.duration = Math.max(1, +$('#inDur').value); }
+  } catch (err) { status('录音处理失败：' + err.message, true); console.error(err); App.duration = Math.max(1,App.t); }
 }
 function updateTakeUI() {
   $('#btnTake').textContent = Mic.taking ? '■ 停止录音' : '● 录一段';
@@ -1120,6 +1472,66 @@ function encodeWAV(ab) {   // 混成单声道 16 位 PCM
 // ---------- 滤镜 / 曲线 ----------
 function setCompare(on) { App.compare = on; applyVideoGrade(); $('#btnCompare').classList.toggle('on', on); }
 function applyVideoGrade() { refVideo.style.filter = $('#chkGradeVideo').checked && !App.compare ? Grade.css() : 'none'; }
+function bindGradePresets() {
+  const key = 'avatarGradePresets';
+  const select = $('#gradePreset'), nameInput = $('#gradePresetName');
+  const initialGrade = {
+    filter: 'cyber', amount: 1,
+    curves: {
+      rgb: [[0,0],[1,1]],
+      r: [[0,0],[0.27213525772094727,0.26302075386047363],[0.7955727577209473,0.796875],[1,1]],
+      g: [[0,0],[1,1]],
+      b: [[0,0],[0.24869775772094727,0.2890625],[0.8059892654418945,0.78125],[1,1]],
+    },
+  };
+  function read() {
+    const raw = localStorage.getItem(key);
+    const stored = raw === null ? [] : JSON.parse(raw);
+    if (stored.version === 2) return stored.items;
+    const previous = raw === null ? [{ id: 'cyber', name: '自定义赛博曲线', grade: initialGrade }] : stored;
+    return [{ id: 'final-reference', name: 'FINAL 截图校色', grade: screenshotGrade }, ...previous];
+  }
+  function render(items, selected) {
+    select.replaceChildren(...items.map(item => new Option(item.name, item.id)));
+    if (items.some(item => item.id === selected)) select.value = selected;
+    if (!items.length) select.add(new Option('暂无模板', ''));
+    select.disabled = $('#btnCustomGrade').disabled = $('#deleteGradePreset').disabled = !items.length;
+  }
+  function refresh() {
+    try { render(read(), select.value); }
+    catch (err) { status('无法读取本地色彩模板：' + err.message, true); }
+  }
+  function save(items, selected) {
+    localStorage.setItem(key, JSON.stringify({ version: 2, items }));
+    render(items, selected);
+  }
+  $('#addGradePreset').onclick = () => {
+    const name = nameInput.value.trim();
+    if (!name) { status('请先输入新模板名称', true); nameInput.focus(); return; }
+    try {
+      const items = read();
+      if (items.some(item => item.name === name)) { status('已有同名色彩模板，请换个名称', true); return; }
+      const id = crypto.randomUUID();
+      save([...items, { id, name, grade: Grade.toJSON() }], id);
+      nameInput.value = '';
+      status('已保存色彩模板：' + name);
+    } catch (err) { status('无法保存本地色彩模板：' + err.message, true); }
+  };
+  $('#btnCustomGrade').onclick = () => {
+    try {
+      const item = read().find(item => item.id === select.value);
+      if (item) Grade.load(structuredClone(item.grade));
+    } catch (err) { status('无法套用色彩模板：' + err.message, true); }
+  };
+  $('#deleteGradePreset').onclick = () => {
+    try {
+      const items = read(), item = items.find(item => item.id === select.value);
+      if (item && confirm('删除本地色彩模板「' + item.name + '」？')) save(items.filter(entry => entry.id !== item.id));
+    } catch (err) { status('无法删除本地色彩模板：' + err.message, true); }
+  };
+  window.addEventListener('storage', e => { if (!e.key || e.key === key) refresh(); });
+  refresh();
+}
 function bindGrade() {
   const fbox = $('#g_filter');
   for (const [v, f] of Object.entries(FILTERS)) {
@@ -1134,6 +1546,7 @@ function bindGrade() {
     tabs.appendChild(b);
   }
   $('#inFilterAmt').oninput = e => { Grade.amount = +e.target.value / 100; Grade.update(); };
+  bindGradePresets();
   $('#btnCurveReset').onclick = () => { Grade.resetCurves(CurveEditor.ch); Grade.update(); };
   $('#btnCurveResetAll').onclick = () => { Grade.resetCurves(); Grade.update(); };
   $('#btnCompare').onpointerdown = () => setCompare(true);
@@ -1156,6 +1569,7 @@ function bindGrade() {
 function showTab(name) {
   if (!$('#tab-' + name)) name = 'pose';
   App.tab = name;
+  if (name === 'earLab') earLabStart = performance.now();
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const t of document.querySelectorAll('#panel .tab')) t.classList.toggle('on', t.id === 'tab-' + name);
   $('#view').classList.toggle('editing', name === 'bones');
@@ -1167,23 +1581,59 @@ function bindTabs() {
   btns.forEach((b, i) => { b.innerHTML += `<kbd>Alt+${i + 1}</kbd>`; b.onclick = () => showTab(b.dataset.tab); });
   document.addEventListener('keydown', e => {
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    const i = '123456'.indexOf(e.key);
+    const i = '1234567'.indexOf(e.key);
     if (i >= 0 && btns[i]) { e.preventDefault(); showTab(btns[i].dataset.tab); }
   });
   let last = null; try { last = localStorage.getItem('avatarTab'); } catch {}
   showTab(last || 'pose');
 }
 
+let earLabStart = 0;
+function earLabTime(now) {
+  const slider = $('#earLabTime');
+  if ($('#earLabLoop').checked) {
+    slider.value = ((now - earLabStart) * +$('#earLabRate').value / (2 * beatSeconds())) % 1400 - 200;
+  }
+  $('#earLabReadout').value = Math.round(+slider.value * 2 * beatSeconds()) + ' ms';
+  return +slider.value;
+}
+function showEarCalibration() {
+  const values = S.earCalibration[$('#earLabSide').value];
+  for (const [key, value] of Object.entries(values)) {
+    const input = $('#s_' + key);
+    input.value = value;
+    input.nextElementSibling.value = input.value;
+  }
+}
+function bindEarLab() {
+  const side = $('#earLabSide');
+  side.onchange = showEarCalibration;
+  showEarCalibration();
+  const slider = $('#earLabTime'), loop = $('#earLabLoop'), rate = $('#earLabRate');
+  slider.oninput = () => { loop.checked = false; };
+  loop.onchange = rate.onchange = () => { earLabStart = performance.now() - (+slider.value + 200) * 2 * beatSeconds() / +rate.value; };
+  for (const key of Object.keys(earDefaults.L)) {
+    const input = $('#s_' + key);
+    input.oninput = () => { S.earCalibration[side.value][key] = +input.value; input.nextElementSibling.value = input.value; };
+  }
+  $('#earLabReset').onclick = () => { S.earCalibration[side.value] = { ...earDefaults[side.value] }; showEarCalibration(); };
+}
 function bindUI() {
+  bindEarLab(); bindSpeedCurve();
   buildButtons(); buildBoneUI(); buildBoxUI(); bindTabs(); renderEventList(); bindGrade(); bindBlueprints(); bindViewDrag();
   renderBoneKeys(); renderBoxKeys();
   $('#btnPlay').onclick = () => (App.playing ? pause() : play());
-  $('#btnStart').onclick = () => seek(0);
+  $('#btnStart').onclick = () => seek(outputRange().start);
   $('#chkRec').onchange = e => { App.recording = e.target.checked; };
-  $('#inDur').onchange = e => { if (!App.audioBuf) App.duration = Math.max(1, +e.target.value); };
+  $('#fitTime').onclick = fitTimeline;
+  for (const [id,factor] of [['zoomIn',0.8],['zoomOut',1.25]]) {
+    $('#'+id).onclick = () => { const span=+$('#inSpan').value; zoomTimeline(factor, App.view0+span/2,0.5); };
+  }
   $('#liveClear').onclick = () => { App.live = { over: [], acts: [], bone: {}, box: {} }; markLive(); refreshEditors(true); };
-  $('#btnUndo').onclick = () => { const e = App.history.pop(); const i = App.events.indexOf(e); if (i >= 0) App.events.splice(i, 1); renderEventList(); };
-  $('#btnClearEv').onclick = () => { if (confirm('清空全部关键帧（包括骨骼和缩放框的）？')) { App.events = []; App.history = []; Tracks.data = {}; renderEventList(); onTracksChanged(); } };
+  bindTimelineUndo();
+  $('#keyRhythm').onclick = () => keyNow('rhythm.strength',{percent:clamp(+$('#keyRhythmValue').value,0,100)});
+  renderRhythmKeys();
+  $('#btnClearEv').onclick = () => { if (confirm('清空全部关键帧（包括骨骼和缩放框的）？')) { App.events = []; Tracks.data = {}; renderEventList(); onTracksChanged(); } };
   $('#btnSaveProj').onclick = () => download(new Blob([projectJSON()], { type: 'application/json' }), 'avatar_project.json');
   $('#fileProj').onchange = async e => { const f = e.target.files[0]; if (f) importJSON(JSON.parse(await f.text())); };
   $('#filePSD').onchange = async e => { const f = e.target.files[0]; if (f) loadPSD(await f.arrayBuffer(), f.name); };

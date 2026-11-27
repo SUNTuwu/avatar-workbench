@@ -1,9 +1,10 @@
 {
   "app": "avatar_generator",
-  "version": 1,
+  "version": 2,
   "audio": "",
-  "duration": 29,
+  "duration": 61,
   "settings": {
+    "rhythmAmount": 50,
     "boilFps": 8,
     "jitter": 0.6,
     "idle": true,
@@ -17,121 +18,380 @@
     "ax": 720,
     "ay": 960,
     "fps": 30,
-    "lapScale": 0.65,
-    "lapX": -228,
-    "lapY": 100
+    "lapScale": 0.815,
+    "lapX": 19,
+    "lapY": 62,
+    "rhythmBpm": 120
   },
+  "speedCurve": [
+    {
+      "t": 0,
+      "rate": 1
+    },
+    {
+      "t": 13.272,
+      "rate": 1
+    },
+    {
+      "t": 15.181,
+      "rate": 0.93
+    },
+    {
+      "t": 17.161,
+      "rate": 1
+    },
+    {
+      "t": 19.242,
+      "rate": 0.86
+    },
+    {
+      "t": 21.296,
+      "rate": 1
+    },
+    {
+      "t": 24.438,
+      "rate": 1
+    },
+    {
+      "t": 26.012,
+      "rate": 0.88
+    },
+    {
+      "t": 29.193,
+      "rate": 0.73
+    },
+    {
+      "t": 32.298,
+      "rate": 0.56
+    },
+    {
+      "t": 35.1,
+      "rate": 0.58
+    },
+    {
+      "t": 37.136,
+      "rate": 1
+    },
+    {
+      "t": 41.4,
+      "rate": 1
+    },
+    {
+      "t": 45.5,
+      "rate": 0.92
+    },
+    {
+      "t": 50.3,
+      "rate": 1
+    },
+    {
+      "t": 53.9,
+      "rate": 1
+    },
+    {
+      "t": 54.678,
+      "rate": 0.93
+    },
+    {
+      "t": 56.73,
+      "rate": 0.91
+    },
+    {
+      "t": 57.8,
+      "rate": 1
+    },
+    {
+      "t": 61,
+      "rate": 1
+    }
+  ],
   "events": [
     { "t": 0, "k": "expr", "v": "happy" },
-    { "t": 0.05, "k": "act", "v": "wave" },
-    { "t": 1.73, "k": "expr", "v": "normal" },
-    { "t": 2.2, "k": "hand", "v": "finger" },
-    { "t": 2.24, "k": "act", "v": "sway" },
-    { "t": 3.52, "k": "expr", "v": "sparkle" },
-    { "t": 4.98, "k": "expr", "v": "happy" },
-    { "t": 5.08, "k": "act", "v": "hop2" },
-    { "t": 6.75, "k": "hand", "v": "none" },
-    { "t": 7, "k": "expr", "v": "shock" },
-    { "t": 7.1, "k": "act", "v": "shake" },
-    { "t": 8.32, "k": "hand", "v": "show" },
-    { "t": 8.32, "k": "laptop", "v": "final" },
-    { "t": 8.38, "k": "act", "v": "sway" },
-    { "t": 9.8, "k": "expr", "v": "panic" },
-    { "t": 9.84, "k": "act", "v": "tremble" },
-    { "t": 10.52, "k": "act", "v": "tremble" },
-    { "t": 11.8, "k": "act", "v": "nod" },
-    { "t": 13.2, "k": "act", "v": "tremble" },
-    { "t": 14.52, "k": "laptop", "v": "none" },
-    { "t": 14.52, "k": "hand", "v": "none" },
-    { "t": 14.52, "k": "expr", "v": "normal" },
-    { "t": 14.8, "k": "act", "v": "tilt" },
-    { "t": 16.12, "k": "expr", "v": "sparkle" },
-    { "t": 16.28, "k": "act", "v": "sway" },
-    { "t": 17.8, "k": "expr", "v": "drool" },
-    { "t": 17.8, "k": "mouth", "v": "drool" },
-    { "t": 17.95, "k": "act", "v": "bounce" },
-    { "t": 19.22, "k": "mouth", "v": null },
-    { "t": 19.22, "k": "expr", "v": "sparkle" },
-    { "t": 19.22, "k": "hand", "v": "think" },
-    { "t": 19.42, "k": "act", "v": "tilt" },
-    { "t": 21.18, "k": "act", "v": "nod" },
-    { "t": 22.45, "k": "hand", "v": "show" },
-    { "t": 22.45, "k": "expr", "v": "happy" },
-    { "t": 22.58, "k": "act", "v": "sway" },
-    { "t": 24.12, "k": "act", "v": "nod" },
-    { "t": 25.07, "k": "hand", "v": "heart" },
-    { "t": 25.07, "k": "expr", "v": "happy" },
-    { "t": 25.23, "k": "act", "v": "bounce" },
-    { "t": 26.96, "k": "hand", "v": "none" },
-    { "t": 27.02, "k": "act", "v": "wave" },
-    { "t": 28.64, "k": "expr", "v": "calm" }
+    { "t": 0.068, "k": "hand", "v": "paw" },
+    { "t": 0.068, "k": "gact", "v": "paw:beckonFast" },
+    { "t": 2.359, "k": "expr", "v": "normal" },
+    { "t": 3, "k": "hand", "v": "finger" },
+    { "t": 3.053, "k": "act", "v": "sway" },
+    { "t": 3.398, "k": "gact", "v": "finger:wag" },
+    { "t": 4.75, "k": "expr", "v": "sparkle2" },
+    { "t": 6.687, "k": "expr", "v": "happy" },
+    { "t": 6.713, "k": "hand", "v": "thumbs" },
+    { "t": 6.713, "k": "gact", "v": "thumbs:cheer" },
+    { "t": 6.819, "k": "act", "v": "hop2" },
+    { "t": 8.039, "k": "gact", "v": "thumbs:thumbUp" },
+    { "t": 9.034, "k": "hand", "v": "none" },
+    { "t": 9.1, "k": "handOff", "v": "all" },
+    { "t": 9.1, "k": "hand", "v": "pointL" },
+    { "t": 9.1, "k": "gact", "v": "pointL:jabL" },
+    { "t": 9.1, "k": "expr", "v": "worried" },
+    { "t": 11.151, "k": "handOff", "v": "all" },
+    { "t": 11.151, "k": "hand", "v": "pointR" },
+    { "t": 11.151, "k": "gact", "v": "pointR:jabR" },
+    { "t": 13.272, "k": "handOff", "v": "all" },
+    { "t": 13.272, "k": "hand", "v": "raise" },
+    { "t": 13.272, "k": "gact", "v": "raise:waveArm" },
+    { "t": 13.272, "k": "expr", "v": "smug" },
+    { "t": 15.181, "k": "handOff", "v": "all" },
+    { "t": 15.181, "k": "hand", "v": "palm" },
+    { "t": 15.181, "k": "gact", "v": "palm:present" },
+    { "t": 17.161, "k": "handOff", "v": "all" },
+    { "t": 17.161, "k": "hand", "v": "pointUp" },
+    { "t": 17.161, "k": "gact", "v": "pointUp:jab" },
+    { "t": 17.161, "k": "expr", "v": "serious" },
+    { "t": 19, "k": "handOff", "v": "all" },
+    { "t": 19.242, "k": "expr", "v": "shock" },
+    { "t": 19.362, "k": "act", "v": "shake" },
+    { "t": 20.837, "k": "hand", "v": "show" },
+    { "t": 20.837, "k": "laptop", "v": "final" },
+    { "t": 20.909, "k": "act", "v": "sway" },
+    { "t": 21.054, "k": "gact", "v": "show:lift" },
+    { "t": 22.625, "k": "expr", "v": "panic" },
+    { "t": 22.673, "k": "act", "v": "tremble" },
+    { "t": 23.495, "k": "act", "v": "tremble" },
+    { "t": 23.773, "k": "gact", "v": "show:offer" },
+    { "t": 25.103, "k": "act", "v": "nod" },
+    { "t": 25.103, "k": "expr", "v": "tired" },
+    { "t": 27.224, "k": "act", "v": "tremble" },
+    { "t": 27.224, "k": "eyes", "v": "closed" },
+    { "t": 29.193, "k": "laptop", "v": "none" },
+    { "t": 29.193, "k": "hand", "v": "chin" },
+    { "t": 29.193, "k": "expr", "v": "tired" },
+    { "t": 29.193, "k": "gact", "v": "chin:stroke" },
+    { "t": 32.298, "k": "expr", "v": "cry" },
+    { "t": 32.298, "k": "hand", "v": "fold" },
+    { "t": 32.298, "k": "gact", "v": "fold:huff" },
+    { "t": 32.676, "k": "wasted", "v": true },
+    { "t": 35.164, "k": "wasted", "v": false },
+    { "t": 35.253, "k": "laptop", "v": "none" },
+    { "t": 35.253, "k": "hand", "v": "none" },
+    { "t": 35.253, "k": "expr", "v": "normal" },
+    { "t": 35.609, "k": "act", "v": "tilt" },
+    { "t": 37.289, "k": "expr", "v": "sparkle2" },
+    { "t": 37.493, "k": "act", "v": "sway" },
+    { "t": 37.773, "k": "hand", "v": "paws" },
+    { "t": 37.773, "k": "gact", "v": "paws:scratch" },
+    { "t": 39.427, "k": "expr", "v": "drool" },
+    { "t": 39.427, "k": "mouth", "v": "drool" },
+    { "t": 39.427, "k": "gact", "v": "paws:pounce" },
+    { "t": 39.618, "k": "act", "v": "bounce" },
+    { "t": 41.235, "k": "mouth", "v": null },
+    { "t": 41.235, "k": "expr", "v": "sparkle2" },
+    { "t": 41.235, "k": "hand", "v": "think" },
+    { "t": 41.494, "k": "act", "v": "tilt" },
+    { "t": 41.602, "k": "gact", "v": "think:hope" },
+    { "t": 43.86, "k": "act", "v": "nod" },
+    { "t": 45.5, "k": "hand", "v": "pokeTips" },
+    { "t": 45.5, "k": "expr", "v": "worried" },
+    { "t": 45.639, "k": "gact", "v": "pokeTips:tapTips" },
+    { "t": 47.726, "k": "gact", "v": "pokeTips:fidget" },
+    { "t": 50.45, "k": "expr", "v": "happy" },
+    { "t": 50.45, "k": "hand", "v": "pray" },
+    { "t": 50.525, "k": "gact", "v": "pray:rub" },
+    { "t": 52.025, "k": "gact", "v": "pray:bow" },
+    { "t": 54.38, "k": "hand", "v": "heart" },
+    { "t": 54.38, "k": "expr", "v": "happy" },
+    { "t": 54.678, "k": "gact", "v": "heart:swayHeart" },
+    { "t": 57.729, "k": "hand", "v": "none" },
+    { "t": 57.8, "k": "hand", "v": "paw2" },
+    { "t": 57.8, "k": "gact", "v": "paw2:beckonFast" },
+    { "t": 60.424, "k": "expr", "v": "calm" }
   ],
   "visemes": {
     "fps": 20,
-    "duration": 29,
-    "labels": ".eeeeeoooooooo....aaaaiiiiaaaaaaaaoooo.......aaaaeeeebbbbiiiiaaaaeeee....iiiieeeeiiiiaaaaeeeeooo.....eeeeeiiiiiaaaaaooooaaaaaiiiiiiiii.......eeeeeeeeee....aaaaaooooouuuuiiiiiaaaaaooooaaaaaeeee.....aaaaaoooooiiiii....aaaaaoooooiiii.......ooooeeeeiiiiiiiieeee....iiiiiiiiaaaaiiiiuuuuiii...........bbbbuuuoooaaa...uuuiiiiiiiaaaoooaaaoooeeeeaaaooouuuaaaeee......aaaaaaaaaaaaaaaaaaaaa.........eeeeooooaaaaoooouuuuaaaa...oooouuuuaaaaiiiieeeeaaaaooo..........uuuueeeeeeee....aaaaiiiieeeeiiiiuuuueeeeaaaa........aaaaaaaaiiiiiiiiiiiiiiiieeeeeee.......bbbbaaaaiiii...bbbbaaaaiii............",
-    "energy": "0367636764576400005775477546754676367600000003676367636754675467547750000577457645764576367636760000035775467644676357753676446764577500000003677546764000036764467635775367644676357754676457760000035775467644676300003676446764577500000003676367546754675477500005774577457645764576367600000000000367467457557500047636746745755754764763674674575575476476000000345677766544566777654000000000367636754675477457645763000367636754675477457645763676000000000036763676367600003676367636763676367636763676000000003567776435677654456776534677765000000036754774576300036754774576000000000000"
+    "duration": 61,
+    "labels": "..eeeeeeeooooooooooo.....aaaaaiiiiiiaaaaaaaaaaaooooo..........aaaaaeeeeebbbbbbiiiiiaaaaaeeeeee.....iiiiieeeeeeiiiiiaaaaaeeeeeoooo.......eeeeeeeiiiiiiaaaaaaaoooooaaaaaaaiiiiiiiiiiii..aaaoooiii...eeebbaaaiii......iiieeooouuu...aaaeeebb......aaaoooiii..eeebbbaaaiii.....iiieeeooouuu..aaaeeebbb......aaoooiii...eeebbbaaiii......iiieeeoouuu...aaaeeebbb.....aaaoooiii...eebbbaaaiii............eeeeeeeeeeee....aaaaaaooooooouuuuiiiiiiaaaaaaoooooaaaaaaeeeee......aaaaaaooooooiiiiii.....aaaaaaooooooiiiii..........ooooooeeeeeeiiiiiiiiiiiieeeeee......iiiiiiiiiiiiiaaaaaaiiiiiiuuuuuuiiii.........aaaaaeeeeiiiiiooooouuuu.........eeeeeaaaaiiiii....bbbbboooouuuuu....aaaaaeeeeeiiiiooooouuuu.........eeeeeaaaaiiiii....bbb......bbbbbuuuuooooaaaa....uuuuiiiiiiiiaaaaooooaaaaooooeeeeeaaaaooouuuuaaaaeeee........aaaaaaaaaaaaaaaaaaaaaaaaaa............eeeeeooooooaaaaaooooouuuuuuaaaaa....oooooouuuuuaaaaaiiiiiieeeeeaaaaaoooo........iiiiiaaaaeeeeoooouuuu.....aaaaeeeeiiii....bbbbuuuuuiiii....iiiiaaaaeeeeooooouuuu....aaaaeeeeiiii........uuuuuueeeeeeeeeeee......aaaaaaiiiiiieeeeeeiiiiiiuuuuuueeeeeeaaaaaa............aaaaaaaaaaaaaaaiiiiiiiiiiiiiiiiiiiiiiiiiiiieeeeeeeeeeeee............bbbbbbaaaaaaiiiiiii.....bbbbbbaaaaaaiiiii...................",
+    "energy": "00366763367664577644000005777544777546675446766366760000000000367763667633675546775466754477550000057774557644576645776367763667600000003557755467764446766357775336766446676445777500335665335000355653356650000003556533566500065535565000000355655355003356653556550000033566535565500665335665000000356653350003556553566500000035565535665000655355655000003356553550003566533565500000000000036775546764400003367644467633577533676444676355775466764557760000003557754667644667630000036676446676457775000000000033677633677544677544677544777500000055777455777445776445776445776336776000000000446554665446554665546650000000004465546654465500004465546654465500004466544655466544655466500000000044655466544655000044600000033674667455755775000047663674467455755575477647663677467445755575447647760000000034566777666544456667776654000000000000366763367554677547774557644576630000366766367754667544774457664577636676000000004465546554665466544650000046554655466500004465446554655000046654665446544655465500004665446544650000000036676636676636676600000036676636676636676636676636676636676636676600000000000033556677777664435566777665544445667777665334466777776655000000000000366755447774557763300000366755447774557760000000000000000000"
   },
   "captions": [
     {
       "start": 0,
-      "end": 2,
+      "end": 2.727,
       "text": "Hello，大家好！"
     },
     {
-      "start": 2.2,
-      "end": 4.9,
+      "start": 3,
+      "end": 6.58,
       "text": "看这边！最近发生了 XXX！"
     },
     {
-      "start": 5,
-      "end": 6.8,
+      "start": 6.713,
+      "end": 9.1,
       "text": "真的好开心！"
     },
     {
-      "start": 7,
-      "end": 9.7,
+      "start": 9.1,
+      "end": 11.094,
+      "text": "看左边，草稿都堆起来了。"
+    },
+    {
+      "start": 11.151,
+      "end": 13.216,
+      "text": "右边呢？又是一摞！"
+    },
+    {
+      "start": 13.272,
+      "end": 15.125,
+      "text": "后面还藏着一摞。"
+    },
+    {
+      "start": 15.181,
+      "end": 17.105,
+      "text": "来，请欣赏我的桌面。"
+    },
+    {
+      "start": 17.161,
+      "end": 18.943,
+      "text": "对了，还有一件大事！"
+    },
+    {
+      "start": 19.242,
+      "end": 22.504,
       "text": "等等……马上就要 final 了。"
     },
     {
-      "start": 9.8,
-      "end": 11.6,
+      "start": 22.625,
+      "end": 24.8,
       "text": "好急，好急！"
     },
     {
-      "start": 11.8,
-      "end": 14.3,
+      "start": 25.103,
+      "end": 28.89,
       "text": "我这几天一直在复习。"
     },
     {
-      "start": 14.7,
-      "end": 17.7,
+      "start": 29.193,
+      "end": 32.192,
+      "text": "刚背完这页……我刚背了啥？"
+    },
+    {
+      "start": 32.298,
+      "end": 35.1,
+      "text": "眼皮都撑不住了，复习快把我送走了。"
+    },
+    {
+      "start": 35.482,
+      "end": 39.3,
       "text": "不过嘛，最近搞到了个好玩的……"
     },
     {
-      "start": 17.85,
-      "end": 19.05,
+      "start": 39.491,
+      "end": 41.018,
       "text": "馋馋！"
     },
     {
-      "start": 19.35,
-      "end": 22.2,
+      "start": 41.4,
+      "end": 45.231,
       "text": "等我考完，我就开始搞！"
     },
     {
-      "start": 22.55,
-      "end": 24.9,
+      "start": 45.5,
+      "end": 50.3,
+      "text": "想看后续的话……来评论区催催更嘛。"
+    },
+    {
+      "start": 50.6,
+      "end": 54.125,
       "text": "对了，在这里求个赞！"
     },
     {
-      "start": 25.15,
-      "end": 26.85,
+      "start": 54.5,
+      "end": 57.532,
       "text": "爱你们！"
     },
     {
-      "start": 27.05,
-      "end": 28.5,
+      "start": 57.88,
+      "end": 60.2,
       "text": "拜拜～"
     }
-  ]
+  ],
+  "tracks": {
+    "rhythm.strength": [{"t":0,"v":{"percent":100},"ease":"ease"},{"t":1.8,"v":{"percent":100},"ease":"ease"},{"t":3,"v":{"percent":0},"ease":"ease"},{"t":34.9,"v":{"percent":0},"ease":"ease"},{"t":36.7,"v":{"percent":45},"ease":"ease"},{"t":40,"v":{"percent":70},"ease":"ease"},{"t":42.2,"v":{"percent":0},"ease":"ease"},{"t":51.7,"v":{"percent":0},"ease":"ease"},{"t":54.5,"v":{"percent":100},"ease":"ease"},{"t":61,"v":{"percent":100},"ease":"ease"}],
+    "bone.head": [
+      {
+        "t": 25.103,
+        "v": {
+          "y": 0,
+          "rot": 0
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 27.526,
+        "v": {
+          "y": 8,
+          "rot": -4
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 29.647,
+        "v": {
+          "y": 3,
+          "rot": -2
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 31.995,
+        "v": {
+          "y": 14,
+          "rot": -8
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 32.676,
+        "v": {
+          "y": 19,
+          "rot": -10
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 35.164,
+        "v": {
+          "y": 0,
+          "rot": 0
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 45.5,
+        "v": {
+          "y": 0,
+          "rot": 0
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 46.474,
+        "v": {
+          "y": 5,
+          "rot": -5
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 48.422,
+        "v": {
+          "y": 3,
+          "rot": 3
+        },
+        "ease": "ease"
+      },
+      {
+        "t": 50.3,
+        "v": {
+          "y": 0,
+          "rot": 0
+        },
+        "ease": "ease"
+      }
+    ]
+  },
+  "psd": "vtuber_art_new.psd",
+  "outputRange": {
+    "start": 0,
+    "end": 61
+  }
 }
